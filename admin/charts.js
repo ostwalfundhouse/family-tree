@@ -77,6 +77,9 @@ async function saveFile(blob, id){
   return path;
 }
 
+// the preview's Options, saved with the chart so the automatic rebuild draws it the same way
+function previewOpts(){ const o = $('preview').contentWindow.__ftree.S.opts; return { birth: !!o.birth, mobile: !!o.mobile, sort: o.sort || 'sheet' }; }
+
 async function make(){
   const pw = $('chPw').value.trim();
   if (pw && (pw.length < 4 || pw.length > 64)){ toast('Use a password of 4 to 64 characters, or leave it empty.', 6000); return; }
@@ -86,7 +89,7 @@ async function make(){
     if ($('chQr').checked){ status('Preparing the private link…'); link = await permanentLink(); if (!link){ status(''); return; } }
     const blob = await renderPdf($('chPaper').value, link), p = ctx.getProject(), id = crypto.randomUUID(), path = await saveFile(blob, id);
     const title = p.chart_title || p.name;
-    const ins = await sb.from('charts').insert({ id, project_id: ctx.projectId, title, storage_path: path, paper: $('chPaper').value, bytes: blob.size, link_id: link ? link.id : null });
+    const ins = await sb.from('charts').insert({ id, project_id: ctx.projectId, title, storage_path: path, paper: $('chPaper').value, bytes: blob.size, link_id: link ? link.id : null, opts: previewOpts(), file_kind: 'print' });
     if (ins.error){ await sb.storage.from('charts').remove([path]); throw ins.error; }
     if (pw){ const s = await sb.rpc('set_chart_password', { p_chart: id, p_password: pw }); if (s.error) throw s.error; }
     $('chPw').value = ''; status(''); toast('Saved. The QR code is ready below.');
@@ -102,9 +105,11 @@ async function update(c, btn){
     const link = c.link_id ? await permanentLink(c.link_id) : null;
     if (c.link_id && !link){ status(''); btn.disabled = false; return; }
     const blob = await renderPdf(c.paper, link), path = await saveFile(blob, c.id);
-    const up = await sb.from('charts').update({ storage_path: path, bytes: blob.size, file_updated_at: new Date().toISOString() }).eq('id', c.id);
+    // the file it replaces becomes the "previous" one (Restore); the one before that is removed
+    const up = await sb.from('charts').update({ storage_path: path, bytes: blob.size, file_updated_at: new Date().toISOString(), file_kind: 'print',
+      prev_path: c.storage_path, prev_kind: c.file_kind, rebuild_error: null, opts: previewOpts() }).eq('id', c.id);
     if (up.error){ await sb.storage.from('charts').remove([path]); throw up.error; }
-    await sb.storage.from('charts').remove([c.storage_path]);
+    if (c.prev_path) await sb.storage.from('charts').remove([c.prev_path]);
     status(''); toast('PDF updated. The QR code stays the same.');
     await load();
   } catch (e){ console.error(e); status(''); toast('Could not update the PDF: ' + (e.message || e), 8000); btn.disabled = false; }
@@ -112,14 +117,16 @@ async function update(c, btn){
 
 /* ---------- list ---------- */
 function render(){
-  const changed = c => new Date(ctx.getProject().updated_at) > new Date(c.file_updated_at);
+  const p = ctx.getProject(), changed = c => p.data_changed_at && new Date(p.data_changed_at) > new Date(c.file_updated_at);
   $('chList').innerHTML = charts.map(c => {
     const url = chartUrl(c), wa = 'https://wa.me/?text=' + encodeURIComponent('Your family tree: ' + url + (c.password_hash ? ' (we will send the password separately)' : ''));
     return '<article class="chart' + (c.enabled ? '' : ' dead') + '"><div class="qr">' + qrSvg(url) + '</div><div class="ci">' +
       '<b>' + esc(c.title) + '</b>' +
       '<span class="hint">Scanning opens this PDF, view only (no download or share). Opened ' + c.views + (c.views === 1 ? ' time' : ' times') + '.</span>' +
       '<span class="hint">PDF for printing: ' + esc(PAPER[c.paper] || c.paper) + (c.bytes ? ', ' + (c.bytes < 1048576 ? Math.max(1, Math.round(c.bytes / 1024)) + ' KB' : (c.bytes / 1048576).toFixed(1) + ' MB') : '') + ', made ' + esc(when(c.file_updated_at)) + (c.link_id ? ', with the private-link QR in the corner' : '') + '.</span>' +
-      (changed(c) ? '<span class="warn">The family tree has changed since this PDF was made. Press Update PDF so the QR shows the latest version.</span>' : '') +
+      (c.file_kind === 'light' ? '<span class="warn">Light version, updated automatically after family changes (small photos, quick to open). Press Update PDF for the print-quality version before printing.</span>' : '') +
+      (c.rebuild_error ? '<span class="warn">Automatic update skipped: ' + esc(c.rebuild_error) + '</span>' : '') +
+      (changed(c) && !c.rebuild_error ? '<span class="warn">' + (c.auto_update && c.enabled ? 'The family tree has changed. This PDF updates itself within about 10 minutes, or press Update PDF now.' : 'The family tree has changed since this PDF was made. Press Update PDF so the QR shows the latest version.') + '</span>' : '') +
       '<div class="acts"><span class="pill ' + (c.enabled ? 'delivered' : 'archived') + '">' + (c.enabled ? 'QR on' : 'QR off') + '</span><span class="pill">' + (c.password_hash ? 'Password on' : 'No password') + '</span></div>' +
       '<input class="field" readonly value="' + esc(url) + '" aria-label="Chart link">' +
       '<div class="acts">' +
@@ -132,6 +139,8 @@ function render(){
       '</div><div class="acts">' +
         '<button class="btn small primary" data-ch="open" data-id="' + c.id + '">Open PDF</button>' +
         '<button class="btn small" data-ch="update" data-id="' + c.id + '">Update PDF</button>' +
+        '<button class="btn small" data-ch="auto" data-id="' + c.id + '">' + (c.auto_update ? 'Auto-update: on' : 'Auto-update: off') + '</button>' +
+        (c.prev_path ? '<button class="btn small" data-ch="restore" data-id="' + c.id + '">Restore previous PDF</button>' : '') +
         '<button class="btn small danger" data-ch="delete" data-id="' + c.id + '">Delete</button>' +
       '</div></div></article>';
   }).join('') || '<p class="hint">Nothing saved yet.</p>';
@@ -159,9 +168,21 @@ async function action(act, id, btn){
     if (error){ toast(error.message, 6000); return; }
     return done(c.enabled ? 'QR switched off. Scanning it now shows a message instead of the family tree.' : 'QR switched on');
   }
+  if (act === 'auto'){
+    const { error } = await sb.from('charts').update({ auto_update: !c.auto_update }).eq('id', id);
+    if (error){ toast(error.message, 6000); return; }
+    return done(c.auto_update ? 'Auto-update off: this PDF stays as it is until you press Update PDF.' : 'Auto-update on: this PDF updates itself after family changes.');
+  }
+  if (act === 'restore'){
+    if (!await ask({ title: 'Restore the previous PDF?', text: 'The QR goes back to showing the previous version. Turn Auto-update off if it should stay that way after the next family change.', ok: 'Restore' })) return;
+    const { error } = await sb.from('charts').update({ storage_path: c.prev_path, file_kind: c.prev_kind || 'print', prev_path: c.storage_path, prev_kind: c.file_kind,
+      file_updated_at: new Date().toISOString(), rebuild_error: null }).eq('id', id);
+    if (error){ toast(error.message, 6000); return; }
+    return done('Previous PDF restored');
+  }
   if (act === 'delete'){
     if (!await ask({ title: 'Delete this PDF and its QR code?', text: 'The PDF is deleted for good, and its QR code (including any framed copy) stops working.', typeWord: 'DELETE', ok: 'Delete for good', danger: true })) return;
-    const rm = await sb.storage.from('charts').remove([c.storage_path]);
+    const rm = await sb.storage.from('charts').remove([c.storage_path, c.prev_path].filter(Boolean));
     if (rm.error){ toast(rm.error.message, 6000); return; }
     await sb.from('charts').delete().eq('id', id);
     return done('Deleted');

@@ -87,8 +87,8 @@ ul.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
     <ol class="steps">
       <li>Find each person below and tap <b>Add photo</b>. Pick a clear photo where the face is easy to see. Old photos are welcome.</li>
       <li>Check their birth date and mobile number, and tap <b>Add details</b> or <b>Edit details</b> to fill in or correct them. Changes go onto the family tree straight away.</li>
-      <li>Is a name spelled wrong, or someone missing? Tap <b>More</b> to correct the name or add a child, husband or wife. We check these before they go on the tree.</li>
-      <li>We check every photo before it goes on the family tree.</li>
+      <li>Is a name spelled wrong, or someone missing? Tap <b>More</b> to correct the name or add a child, husband or wife. <span id="howNames">We check these before they go on the tree.</span></li>
+      <li id="howPhotos">We check every photo before it goes on the family tree.</li>
     </ol>
   </section>
 
@@ -129,7 +129,7 @@ function toast(m, ms){ const t = $('toast'); t.textContent = m; t.hidden = false
 const rpc = async (fn, body) => (await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
 
 const token = location.hash.slice(1).trim().toLowerCase();
-let people = [], suggestions = [], need = true, target = null;
+let people = [], suggestions = [], need = true, target = null, auto = false;   // auto: this family's changes go on the tree at once
 let open_ = null; // { pid, mode: 'details' | 'more' | 'rename' | 'add_child' | 'add_spouse' | 'remove' } — the one open form
 const previews = new Map(), busy = new Set();
 // the link's password, when it has one: asked once, kept for this browser tab, sent with every call
@@ -156,7 +156,9 @@ async function open(){
   if (!r || !r.ok) return stop(r && r.reason === 'expired' ? 'This link has expired' : r && r.reason === 'off' ? 'This link is switched off' : 'This link is not valid',
     'Please ask us for a new link to add your family photos.');
   $('msg').hidden = true;
-  people = r.people; suggestions = r.suggestions || [];
+  people = r.people; suggestions = r.suggestions || []; auto = !!r.auto;
+  $('howNames').textContent = auto ? 'They go on the tree straight away; removals and big name changes are checked by us first.' : 'We check these before they go on the tree.';
+  $('howPhotos').textContent = auto ? 'Photos go on the family tree straight away.' : 'We check every photo before it goes on the family tree.';
   const t = (r.title || '').trim();
   $('title').textContent = t ? 'Photos and details for the ' + t + ' tree' : 'Photos and details for your family tree';
   document.title = $('title').textContent;
@@ -191,7 +193,7 @@ function suggestForm(p, mode){
         '<label>Birth date (optional)<input name="birth" inputmode="numeric" autocomplete="off" placeholder="27/05/1970 or 1970"></label>' +
         '<label class="wide">Mobile (optional)<input name="mobile" type="tel" inputmode="tel" autocomplete="off"></label>');
   return '<form class="edit" data-form="' + mode + '" data-pid="' + esc(p.pid) + '"><p class="fh wide">' + esc(head) + '</p>' + fields +
-    '<p class="hint wide">We check suggestions before they go on the family tree.</p>' +
+    '<p class="hint wide">' + (auto && mode !== 'remove' ? 'This goes on the family tree straight away (big name changes are checked by us first).' : 'We check this before it goes on the family tree.') + '</p>' +
     '<p class="err" hidden></p><div class="row"><button class="btn primary" type="submit">Send</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
 }
 
@@ -233,8 +235,9 @@ async function send(p, file){
     const res = await fetch(SUPABASE_URL + '/functions/v1/share-upload', { method: 'POST', headers: { apikey: SUPABASE_KEY }, body: fd });
     const r = await res.json().catch(() => ({}));
     if (!res.ok || !r.ok) throw new Error(r.error || 'The photo could not be sent. Please try again.');
-    previews.set(p.pid, j.preview); if (p.status !== 'approved') p.status = 'pending';
-    toast('Thank you! Photo of ' + p.name.split(' ')[0] + ' received.');
+    previews.set(p.pid, j.preview);
+    if (r.applied){ p.status = 'approved'; toast('Thank you! The photo of ' + p.name.split(' ')[0] + ' is on the family tree now.'); }
+    else { if (p.status !== 'approved') p.status = 'pending'; toast('Thank you! Photo of ' + p.name.split(' ')[0] + ' received. We will check it' + (r.review === 'small' ? ', because it is quite small' : '') + '.', 6000); }
   } catch (e){ toast(e.message || String(e), 7000); }
   busy.delete(p.pid); render();
 }
@@ -257,8 +260,9 @@ async function submit(form){
       const name = form.name ? form.name.value.trim() : '';
       const r = await rpc('share_suggest', { p_token: token, p_kind: mode, p_pid: p.pid, p_name: name, p_gender: form.gender ? form.gender.value : '', p_birth: birth, p_mobile: mobile, p_note: form.note ? form.note.value.trim() : '', p_password: password || null });
       if (!r || !r.ok) throw new Error((r && r.error) || 'Could not send. Please try again.');
-      suggestions.push({ kind: mode, pid: p.pid, name }); open_ = null; render();
-      toast('Thank you! We will check it before it goes on the family tree.');
+      open_ = null;
+      if (r.applied){ toast('Done! It is on the family tree now.'); await open(); }   // reload the list to show the new name or person
+      else { suggestions.push({ kind: mode, pid: p.pid, name }); render(); toast('Thank you! We will check it before it goes on the family tree.', 6000); }
     }
   } catch (e){ say(e.message); btn.disabled = false; }
 }

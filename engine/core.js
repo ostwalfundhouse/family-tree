@@ -1,6 +1,6 @@
 'use strict';
 /* ============ text metrics (Helvetica / Times-Bold tables, shared by screen layout and PDF) ============ */
-const CP_EXT = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ';
+const CP_EXT = '\u20AC\u0081\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u008D\u017D\u008F\u0090\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u009D\u017E\u0178';
 function cpByte(ch){ const c = ch.charCodeAt(0); if (c < 128 || (c >= 160 && c < 256)) return c; const i = CP_EXT.indexOf(ch); return i < 0 ? -1 : 128 + i; }
 function isLatin(s){ for (const ch of s) if (cpByte(ch) < 0) return false; return true; }
 function tw(s, size, f){ let w = 0; const T = WID[f]; for (const ch of s){ const b = cpByte(ch); w += (b >= 32 && T[b - 32]) || 620; } return w * size / 1000; }
@@ -197,7 +197,7 @@ function layoutTree(model, o, focusId){
     if (i > 0) lines.push({ k: 'L', x1: x - (2 * rr + 14 * cs), y1: 0, x2: x, y2: 0 });
   });
   const title = (o.title || '').trim();
-  const gensN = D + 1, sub = count + (count === 1 ? ' person' : ' people') + ' · ' + gensN + (gensN === 1 ? ' generation' : ' generations');
+  const gensN = D + 1, sub = count + (count === 1 ? ' person' : ' people') + ' \u00B7 ' + gensN + (gensN === 1 ? ' generation' : ' generations');
   const tSize = Math.max(26, R1 * .11), ty = -(rr + R1 * .2);
   if (title) texts.push({ s: title, x: 0, y: ty, rot: 0, size: tSize, display: true, al: 'c', maxW: (D >= 1 ? arc1 : R1) * 1.5 });
   texts.push({ s: sub, x: 0, y: title ? ty + tSize * .82 : ty + tSize * .3, rot: 0, size: Math.max(15, tSize * .27), sub: true, al: 'c' });
@@ -236,7 +236,7 @@ function layoutTree(model, o, focusId){
 
 /* ============ spreadsheet files: read .xlsx / .csv, write .xlsx (no library needed) ============ */
 function parseCSV(text){
-  const rows = []; let row = [], cur = '', q = false; text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], cur = '', q = false; text = text.replace(/^\uFEFF/, '');
   const first = text.split(/\r?\n/)[0] || ''; const sep = (first.split(';').length > first.split(',').length) ? ';' : (first.split('\t').length > first.split(',').length ? '\t' : ',');
   for (let i = 0; i < text.length; i++){
     const c = text[i];

@@ -3,7 +3,8 @@
 import { sb, $, esc, toast, when } from '../js/sb.js';
 
 let ctx = null, edits = [];
-const FIELD = { birth: 'Birth date', mobile: 'Mobile' };
+const FIELD = { birth: 'Birth date', mobile: 'Mobile', name: 'Name', added: 'Added to the family', photo: 'Photo' };
+const UNDO = { added: 'Remove again', photo: 'Restore previous photo' };
 
 let sugs = [];
 const G = { M: 'male', F: 'female' };
@@ -57,10 +58,12 @@ function render(){
   $('edCard').hidden = !edits.length;
   $('edCount').textContent = edits.filter(e => !e.undone_at).length;
   $('edList').innerHTML = edits.map(e => '<li class="edit-row' + (e.undone_at ? ' undone' : '') + '">' +
-    '<div><b>' + esc(names.get(e.person_pid) || 'Removed person (' + e.person_pid + ')') + '</b> · ' + FIELD[e.field] + '<br>' +
-    '<span class="muted">' + esc(shown(e.field, e.old_value)) + '</span> → <b>' + esc(shown(e.field, e.new_value)) + '</b></div>' +
+    '<div><b>' + esc(names.get(e.person_pid) || (e.field === 'added' ? e.new_value : 'Removed person (' + e.person_pid + ')')) + '</b> · ' + FIELD[e.field] + '<br>' +
+    (e.field === 'added' ? '<span class="muted">New person from the family</span>'
+      : e.field === 'photo' ? '<span class="muted">New photo from the family' + (e.old_value ? ' (the previous one is kept for 30 days)' : '') + '</span>'
+      : '<span class="muted">' + esc(shown(e.field, e.old_value)) + '</span> → <b>' + esc(shown(e.field, e.new_value)) + '</b>') + '</div>' +
     '<div class="acts"><span class="hint">' + esc(when(e.created_at)) + (e.undone_at ? ' · undone' : '') + '</span>' +
-    (e.undone_at ? '' : '<button class="btn small" data-undo="' + e.id + '">Undo</button>') + '</div></li>').join('');
+    (e.undone_at ? '' : '<button class="btn small" data-undo="' + e.id + '">' + (UNDO[e.field] || 'Undo') + '</button>') + '</div></li>').join('');
 }
 
 async function undo(id, btn){

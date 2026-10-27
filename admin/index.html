@@ -82,7 +82,7 @@
 import { sb, configured, $, esc, toast, when, STATUS, currentAdmin, ask } from '../js/sb.js';
 import { SUPABASE_URL, SUPABASE_KEY, LIMITS_MB } from '../config.js';
 
-let projects = [];
+let projects = [], todayCount = new Map();
 
 async function show(){
   if (!configured){ $('setupView').hidden = false; return; }
@@ -154,12 +154,17 @@ $('runBtn').onclick = async () => {
 async function loadProjects(){
   const { data, error } = await sb.from('projects').select('id,name,customer_name,status,updated_at,people(count)').order('updated_at', { ascending: false });
   if (error){ toast('Could not load projects: ' + error.message, 6000); return; }
-  projects = data; render();
+  projects = data;
+  // family changes applied today, per project
+  const since = new Date(); since.setHours(0, 0, 0, 0);
+  const { data: ed } = await sb.from('person_edits').select('project_id').gte('created_at', since.toISOString()).is('undone_at', null);
+  todayCount = new Map(); for (const e of ed || []) todayCount.set(e.project_id, (todayCount.get(e.project_id) || 0) + 1);
+  render();
 }
 function render(){
   const f = $('filter').value;
   const list = projects.filter(p => f === 'all' || (f === 'archived' ? p.status === 'archived' : p.status !== 'archived'));
-  $('rows').innerHTML = list.map(p => '<tr class="go" data-id="' + p.id + '"><td><a href="project.html?id=' + p.id + '">' + esc(p.name) + '</a></td><td class="opt">' + esc(p.customer_name || '') + '</td><td><span class="pill ' + p.status + '">' + STATUS[p.status] + '</span></td><td class="num">' + ((p.people[0] && p.people[0].count) || 0) + '</td><td class="opt muted">' + when(p.updated_at) + '</td></tr>').join('');
+  $('rows').innerHTML = list.map(p => '<tr class="go" data-id="' + p.id + '"><td><a href="project.html?id=' + p.id + '">' + esc(p.name) + '</a>' + (todayCount.get(p.id) ? ' <span class="pill collecting">' + todayCount.get(p.id) + ' family change' + (todayCount.get(p.id) > 1 ? 's' : '') + ' today</span>' : '') + '</td><td class="opt">' + esc(p.customer_name || '') + '</td><td><span class="pill ' + p.status + '">' + STATUS[p.status] + '</span></td><td class="num">' + ((p.people[0] && p.people[0].count) || 0) + '</td><td class="opt muted">' + when(p.updated_at) + '</td></tr>').join('');
   $('empty').hidden = list.length > 0;
 }
 $('filter').onchange = render;

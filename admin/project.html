@@ -61,7 +61,8 @@
 
   <section class="card" id="linkCard">
     <div class="head"><h2>Photo link for the customer</h2></div>
-    <p class="hint">A private page where the family adds a photo for each person. Anyone with the link can upload, so send it only to the customer. Photos wait here for your review.</p>
+    <p class="hint">A private page where the family adds photos, details and missing people. Anyone with the link can use it, so send it only to the customer.</p>
+    <label class="f check"><input type="checkbox" id="autoChanges"> <span><b>Apply family changes at once.</b> Photos, name corrections and new children, husbands and wives go onto the chart straight away, and you can undo each one below. Removals, big name changes, a second husband or wife, very small photos and bursts of many changes still wait for your approval. Untick to review everything first.</span></label>
     <div id="links"></div>
     <div class="acts">
       <label class="f" style="flex-direction:row;align-items:center;gap:8px">Valid for
@@ -101,7 +102,7 @@
 
   <section class="card" id="edCard" hidden>
     <div class="head"><h2>Changes from the family</h2><div class="stat"><div><b id="edCount">0</b><span>in force</span></div></div></div>
-    <p class="hint">Birth dates and mobile numbers changed through the photo link go onto the chart straight away. Undo puts back the old value.</p>
+    <p class="hint">Changes the family made through the private link that went onto the chart straight away. Undo puts things back; Restore previous photo brings back the photo it replaced.</p>
     <ul class="edits" id="edList"></ul>
   </section>
 
@@ -155,6 +156,12 @@ async function load(){
   project = data; rows = await loadRows(id);
   fillDetails(); renderSheet(); refreshPreview();
   $('view').hidden = false;
+  $('autoChanges').checked = project.auto_changes !== false;
+  $('autoChanges').onchange = async e => {
+    const on = e.target.checked, { data, error } = await sb.from('projects').update({ auto_changes: on }).eq('id', id).select('*').single();
+    if (error){ e.target.checked = !on; toast('Could not change this: ' + error.message, 6000); return; }
+    project = data; toast(on ? 'Family changes now go onto the chart at once.' : 'Family changes now wait for your approval.');
+  };
   // after any change to the people: reload them and redraw every section that shows them
   const reload = async () => { rows = await loadRows(id); renderSheet(); refreshPreview(); photos.render(); edits.load(); };
   photos.init({ projectId: id, getProject: () => project, setProject: p => { project = p; fillDetails(); }, getRows: () => rows, onChange: refreshPreview, reload });
