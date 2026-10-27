@@ -63,7 +63,7 @@ async function renderPdf(paper, link){
   if (typeof qrcode !== 'function') throw new Error('the QR code tool did not load; check the internet connection and reload');
   status('Drawing the chart and preparing photos for print…');
   const blob = await new Promise((resolve, reject) => {
-    if (link){ const q = qrOf(linkUrl(link)); win.FT_PDF_EXTRA = { qr: { n: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) }, caption: 'Scan to add photos and details' }; }
+    if (link){ const q = qrOf(linkUrl(link)); win.FT_PDF_EXTRA = { qr: { n: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) }, caption: 'Scan or tap to add photos and details', url: linkUrl(link) }; }
     win.FT_ON_FILE = (name, file) => resolve(file);
     win.__ftree.exportPDF(paper).catch(reject);
   }).finally(() => { delete win.FT_PDF_EXTRA; delete win.FT_ON_FILE; });

@@ -321,7 +321,7 @@ function writeXLSX(header, rows){
 function b64bytes(b64){ const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
 function jpegInfo(u){ let i = 2; while (i < u.length){ if (u[i] !== 0xFF){ i++; continue; } const m = u[i + 1]; if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { h: (u[i + 5] << 8) | u[i + 6], w: (u[i + 7] << 8) | u[i + 8], n: u[i + 9] }; i += 2 + ((u[i + 2] << 8) | u[i + 3]); } return null; }
 function pdfStr(s){ let o = '('; for (const ch of s){ const b = cpByte(ch); if (b < 0){ o += '?'; continue; } if (b === 40 || b === 41 || b === 92) o += '\\' + String.fromCharCode(b); else if (b < 32 || b > 126) o += '\\' + b.toString(8).padStart(3, '0'); else o += String.fromCharCode(b); } return o + ')'; }
-async function makePDF({ wPt, hPt, content, images, title }){
+async function makePDF({ wPt, hPt, content, images, title, links }){
   const enc = new TextEncoder(), objs = [];
   const add = (dict, stream) => { objs.push({ dict, stream }); return objs.length; };
   let body = enc.encode(content), filter = '';
@@ -331,8 +331,9 @@ async function makePDF({ wPt, hPt, content, images, title }){
   const fonts = ['Helvetica', 'Helvetica-Bold', 'Times-Bold'].map(n => add('<< /Type /Font /Subtype /Type1 /BaseFont /' + n + ' /Encoding /WinAnsiEncoding >>'));
   const xo = images.map(im => add('<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h + ' /ColorSpace ' + (im.n === 1 ? '/DeviceGray' : im.n === 4 ? '/DeviceCMYK' : '/DeviceRGB') + ' /BitsPerComponent 8 /Filter /DCTDecode /Length ' + im.bytes.length + ' >>', im.bytes));
   const info = add('<< /Title ' + pdfStr(title || 'Family tree') + ' /Producer (Family tree chart) >>');
+  const annots = (links || []).map(l => add('<< /Type /Annot /Subtype /Link /Rect [' + l.rect.map(v => v.toFixed(2)).join(' ') + '] /Border [0 0 0] /A << /S /URI /URI ' + pdfStr(l.url) + ' >> >>'));
   objs[pages - 1].dict = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';
-  objs[page - 1].dict = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + wPt.toFixed(2) + ' ' + hPt.toFixed(2) + '] /Contents ' + cont + ' 0 R /Resources << /Font << ' + fonts.map((f, i) => '/F' + (i + 1) + ' ' + f + ' 0 R').join(' ') + ' >> /XObject << ' + xo.map((x, i) => '/I' + i + ' ' + x + ' 0 R').join(' ') + ' >> >> >>';
+  objs[page - 1].dict = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + wPt.toFixed(2) + ' ' + hPt.toFixed(2) + '] /Contents ' + cont + ' 0 R /Resources << /Font << ' + fonts.map((f, i) => '/F' + (i + 1) + ' ' + f + ' 0 R').join(' ') + ' >> /XObject << ' + xo.map((x, i) => '/I' + i + ' ' + x + ' 0 R').join(' ') + ' >> >>' + (annots.length ? ' /Annots [' + annots.map(a => a + ' 0 R').join(' ') + ']' : '') + ' >>';
   const parts = [], offs = []; let pos = 0;
   const put = x => { const u = typeof x === 'string' ? enc.encode(x) : x; parts.push(u); pos += u.length; };
   put('%PDF-1.4\n%~~~~\n');
@@ -381,12 +382,14 @@ function chartToPDFContent(lay, photoIndex, sc, wPt, hPt){
   return o.join('\n');
 }
 // A QR code in the page's bottom-right corner, drawn as vector squares so it prints sharp at any size.
-// extra = { qr: { n: modules per side, dark(row, col) }, caption }; returns PDF content to append ('' when none).
+// extra = { qr: { n: modules per side, dark(row, col) }, caption, url }; returns PDF content to append ('' when none).
+function qrBox(wPt, hPt){ const size = Math.max(72, Math.min(216, Math.min(wPt, hPt) * .08)), pad = Math.max(18, size * .2); return { x0: wPt - pad - size, y0: pad, size, pad }; }
+// the corner QR as a clickable link to extra.url, for makePDF's links ([] when there is none)
+function pdfQRLinks(extra, wPt, hPt){ if (!extra || !extra.qr || !extra.url) return []; const b = qrBox(wPt, hPt); return [{ rect: [b.x0, b.y0, b.x0 + b.size, b.y0 + b.size], url: extra.url }]; }
 function pdfQR(extra, wPt, hPt){
   if (!extra || !extra.qr) return '';
   const f = n => (Math.round(n * 100) / 100).toString(), q = extra.qr, quiet = 2;
-  const size = Math.max(72, Math.min(216, Math.min(wPt, hPt) * .08)), m = size / (q.n + 2 * quiet), pad = Math.max(18, size * .2);
-  const x0 = wPt - pad - size, y0 = pad, o = ['q 1 1 1 rg ' + f(x0) + ' ' + f(y0) + ' ' + f(size) + ' ' + f(size) + ' re f 0.098 0.114 0.227 rg'];
+  const { x0, y0, size, pad } = qrBox(wPt, hPt), m = size / (q.n + 2 * quiet), o = ['q 1 1 1 rg ' + f(x0) + ' ' + f(y0) + ' ' + f(size) + ' ' + f(size) + ' re f 0.098 0.114 0.227 rg'];
   for (let r = 0; r < q.n; r++) for (let c = 0; c < q.n; c++) if (q.dark(r, c)) o.push(f(x0 + (quiet + c) * m) + ' ' + f(y0 + size - (quiet + r + 1) * m) + ' ' + f(m + .02) + ' ' + f(m + .02) + ' re');
   o.push('f');
   if (extra.caption){

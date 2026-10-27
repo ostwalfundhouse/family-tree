@@ -7,27 +7,33 @@
 <title>Family tree</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
 <style>
-/* The page behind a chart QR code: the saved PDF, view only. No download, share or print buttons. */
+/* The page behind a chart QR code: the saved PDF, view only. No download, share or print buttons.
+   Zoom and pan are handled here (pinch, drag, double-tap, wheel): a light overview of the whole page follows
+   the fingers instantly, and the part on screen is then redrawn sharp, so deep zoom never needs a huge canvas. */
 :root{
   --paper:#ECEAE4; --surface:#FFFFFF; --ink:#1E1B2E; --sub:#5F5A73; --rule:#E2DACB;
-  --navy:#1D2250; --navy-ink:#F3F4FB; --navy-sub:#B4B9DC; --accent:#C9800A; --accent-ink:#1F1602; --err:#B3261E;
+  --navy:#1D2250; --navy-ink:#F3F4FB; --navy-sub:#B4B9DC; --accent:#C9800A; --accent-ink:#1F1602;
   --ui:"Mukta","Segoe UI",system-ui,sans-serif; --display:"Rozha One",Georgia,serif;
 }
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; --err:#F2867E; color-scheme:dark } }
-:root[data-theme="dark"]{ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; --err:#F2867E; color-scheme:dark }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; color-scheme:dark } }
+:root[data-theme="dark"]{ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; color-scheme:dark }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{background:var(--paper);color:var(--ink);font-family:var(--ui);display:flex;flex-direction:column;overflow:hidden}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:none}
 [hidden]{display:none!important}
-header{background:var(--navy);color:var(--navy-ink);display:flex;align-items:center;gap:10px;padding:8px 12px 8px 16px;flex:none}
+header{background:var(--navy);color:var(--navy-ink);display:flex;align-items:center;gap:10px;padding:8px 12px 8px 16px;flex:none;position:relative;z-index:3}
 header h1{font-family:var(--display);font-weight:400;font-size:20px;margin:0 auto 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .zb{min-width:42px;height:38px;border-radius:19px;border:1px solid rgba(255,255,255,.25);background:transparent;color:inherit;font:inherit;font-size:18px;cursor:pointer;padding:0 10px}
 .zb.fit{font-size:14px;font-weight:600}
-.zb:disabled{opacity:.4}
-#view{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;position:relative;touch-action:pan-x pan-y}
-#pages{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px;min-width:min-content}
-#pages canvas{background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.18);display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-.card{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+.zb:disabled{opacity:.4;cursor:default}
+#view{flex:1;position:relative;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#view.drag{cursor:grabbing}
+#view canvas{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none}
+#overview{background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+#links a{position:absolute;display:block;border-radius:6px;-webkit-tap-highlight-color:rgba(201,128,10,.25)}
+#links a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(13,15,40,.82);color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;pointer-events:none;transition:opacity .4s;white-space:nowrap}
+.card{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:var(--paper);z-index:2}
 .box{max-width:380px;width:100%;background:var(--surface);border:1px solid var(--rule);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px;text-align:center}
 .box h2{margin:0;font-family:var(--display);font-weight:400;font-size:24px}
 .box p{margin:0;color:var(--sub)}
@@ -43,7 +49,13 @@ header h1{font-family:var(--display);font-weight:400;font-size:20px;margin:0 aut
   <button class="zb fit" id="zFit" aria-label="Fit to screen" disabled>Fit</button>
   <button class="zb" id="zIn" aria-label="Zoom in" disabled>+</button>
 </header>
-<main id="view"><div id="pages"></div><div class="card" id="card"><div class="box"><p>Opening…</p></div></div></main>
+<main id="view">
+  <canvas id="overview"></canvas>
+  <canvas id="detail"></canvas>
+  <div id="links"></div>
+  <div id="hint" hidden>Pinch or double-tap to zoom · drag to move</div>
+  <div class="card" id="card"><div class="box"><p>Opening…</p></div></div>
+</main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script type="module">
@@ -62,40 +74,118 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && /^[sp]$/i.test(e.key)) e.preventDefault(); });
 
-let doc = null, zoom = 1, rendering = 0;
-const ZOOMS = [1, 1.5, 2, 3, 4, 6], MAX_PIXELS = 16e6; // stay under phone canvas limits
+/* ================= view state =================
+   s  = CSS pixels per PDF point,  tx/ty = where the page's top-left corner sits on screen (CSS pixels) */
+const V = { page: null, W: 0, H: 0, s: 1, tx: 0, ty: 0, fit: 1, max: 6, links: [] };
+const view = $('view'), ov = $('overview'), dt = $('detail');
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+const vw = () => view.clientWidth, vh = () => view.clientHeight;
 
-async function render(){
-  const ticket = ++rendering, wrap = $('pages'), dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const avail = $('view').clientWidth - 32, availH = $('view').clientHeight - 32;
-  for (let n = 1; n <= doc.numPages; n++){
-    const page = await doc.getPage(n), base = page.getViewport({ scale: 1 });
-    const fit = Math.min(avail / base.width, availH / base.height);
-    let scale = fit * zoom * dpr; const px = base.width * base.height * scale * scale;
-    if (px > MAX_PIXELS) scale *= Math.sqrt(MAX_PIXELS / px);
-    const vp = page.getViewport({ scale });
-    let c = wrap.children[n - 1]; if (!c){ c = document.createElement('canvas'); wrap.appendChild(c); }
-    const off = document.createElement('canvas'); off.width = Math.floor(vp.width); off.height = Math.floor(vp.height);
-    await page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
-    if (ticket !== rendering) return;
-    c.width = off.width; c.height = off.height; c.getContext('2d').drawImage(off, 0, 0);
-    c.style.width = (base.width * fit * zoom) + 'px'; c.style.height = (base.height * fit * zoom) + 'px';
+function clamp(){
+  V.s = Math.min(V.max, Math.max(V.fit, V.s));
+  const pw = V.W * V.s, ph = V.H * V.s, w = vw(), h = vh();
+  V.tx = pw <= w ? (w - pw) / 2 : Math.min(0, Math.max(w - pw, V.tx));
+  V.ty = ph <= h ? (h - ph) / 2 : Math.min(0, Math.max(h - ph, V.ty));
+}
+function zoomAt(s, cx, cy){ const px = (cx - V.tx) / V.s, py = (cy - V.ty) / V.s; V.s = s; V.tx = cx - px * V.s; V.ty = cy - py * V.s; apply(); }
+function fitPage(){ V.fit = Math.min((vw() - 24) / V.W, (vh() - 24) / V.H); V.max = Math.max(V.fit * 4, 6); V.s = V.fit; apply(); }
+
+// move the layers to the current view at once (cheap), then redraw the visible part sharp shortly after
+let rendered = null; // the view the detail canvas was drawn for
+function apply(){
+  clamp();
+  const k = V.s / ovScale; ov.style.transform = 'translate(' + V.tx + 'px,' + V.ty + 'px) scale(' + k + ')';
+  if (rendered){ const r = V.s / rendered.s; dt.style.transform = 'translate(' + (V.tx - rendered.tx * r) + 'px,' + (V.ty - rendered.ty * r) + 'px) scale(' + r + ')'; }
+  // link areas follow the page; never smaller than a fingertip (44 px), centred on the QR
+  for (const l of V.links){ const w = Math.max(44, l.w * V.s), h = Math.max(44, l.h * V.s), st = l.el.style; st.left = V.tx + (l.x + l.w / 2) * V.s - w / 2 + 'px'; st.top = V.ty + (l.y + l.h / 2) * V.s - h / 2 + 'px'; st.width = w + 'px'; st.height = h + 'px'; }
+  $('zOut').disabled = V.s <= V.fit * 1.001; $('zIn').disabled = V.s >= V.max * .999;
+  clearTimeout(apply.t); apply.t = setTimeout(renderDetail, 180);
+}
+
+/* ================= drawing ================= */
+// intent 'print': draw without waiting for animation frames, which stall in background tabs and some embedded views
+let ovScale = 1, task = null;
+async function renderOverview(){
+  // the whole page, light: about one and a half screens across, never more than ~2.5 million pixels
+  const p = Math.min(Math.max(vw(), vh()) * 1.5 * dpr() / Math.max(V.W, V.H), Math.sqrt(2.5e6 / (V.W * V.H)));
+  const vp = V.page.getViewport({ scale: p });
+  ov.width = Math.floor(vp.width); ov.height = Math.floor(vp.height);
+  ovScale = p; ov.style.width = vp.width + 'px'; ov.style.height = vp.height + 'px';
+  await V.page.render({ canvasContext: ov.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+}
+async function renderDetail(){
+  const want = { s: V.s, tx: V.tx, ty: V.ty }, r = dpr();
+  if (task){ task.cancel(); task = null; }
+  // only the screen-sized part on view: the page is placed at (tx, ty) and anything outside is clipped
+  const c = document.createElement('canvas'); c.width = Math.ceil(vw() * r); c.height = Math.ceil(vh() * r);
+  const vp = V.page.getViewport({ scale: want.s * r, offsetX: want.tx * r, offsetY: want.ty * r });
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(Math.max(0, want.tx * r), Math.max(0, want.ty * r), V.W * want.s * r, V.H * want.s * r);
+  task = V.page.render({ canvasContext: g, viewport: vp, intent: 'print' });
+  try { await task.promise; } catch (e){ return; } // cancelled by a newer view
+  task = null;
+  dt.width = c.width; dt.height = c.height; dt.style.width = vw() + 'px'; dt.style.height = vh() + 'px';
+  dt.getContext('2d').drawImage(c, 0, 0); rendered = want; dt.style.transform = 'none';
+  if (V.s !== want.s || V.tx !== want.tx || V.ty !== want.ty) apply();
+}
+
+/* ================= links in the PDF (the QR in the corner) become tappable areas ================= */
+async function readLinks(){
+  const base = V.page.getViewport({ scale: 1 });
+  for (const a of await V.page.getAnnotations()){
+    if (a.subtype !== 'Link' || !a.url || !/^https:\/\//.test(a.url)) continue;
+    const [x1, y1, x2, y2] = base.convertToViewportRectangle(a.rect);
+    const el = document.createElement('a'); el.href = a.url; el.target = '_blank'; el.rel = 'noopener'; el.setAttribute('aria-label', 'Open the family link from the QR code');
+    $('links').appendChild(el);
+    V.links.push({ el, x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) });
   }
 }
-async function setZoom(z, cx, cy){
-  const v = $('view'), old = zoom, fx = (v.scrollLeft + (cx ?? v.clientWidth / 2)) / v.scrollWidth, fy = (v.scrollTop + (cy ?? v.clientHeight / 2)) / v.scrollHeight;
-  zoom = z; $('zOut').disabled = zoom <= ZOOMS[0]; $('zIn').disabled = zoom >= ZOOMS[ZOOMS.length - 1];
-  // stretch the current picture first so the zoom feels instant, then redraw sharp
-  for (const c of $('pages').children){ c.style.width = parseFloat(c.style.width) * z / old + 'px'; c.style.height = parseFloat(c.style.height) * z / old + 'px'; }
-  v.scrollLeft = fx * v.scrollWidth - (cx ?? v.clientWidth / 2); v.scrollTop = fy * v.scrollHeight - (cy ?? v.clientHeight / 2);
-  await render();
-}
-$('zIn').onclick = () => setZoom(ZOOMS.find(z => z > zoom) || zoom);
-$('zOut').onclick = () => setZoom([...ZOOMS].reverse().find(z => z < zoom) || zoom);
-$('zFit').onclick = () => setZoom(1);
-$('pages').addEventListener('dblclick', e => { const r = $('view').getBoundingClientRect(); setZoom(ZOOMS.find(z => z > zoom) || 1, e.clientX - r.left, e.clientY - r.top); });
-let resizeT = 0; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => doc && render(), 200); });
 
+/* ================= gestures ================= */
+const pts = new Map(); let last = null, moved = 0, lastTap = { t: 0, x: 0, y: 0 };
+const local = e => { const r = view.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+view.addEventListener('pointerdown', e => {
+  if (!V.page) return;
+  pts.set(e.pointerId, local(e)); moved = 0; last = null;
+  if (!e.target.closest('#links a')) view.setPointerCapture(e.pointerId);
+  view.classList.add('drag');
+});
+view.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  const prev = pts.get(e.pointerId), now = local(e); pts.set(e.pointerId, now);
+  if (pts.size === 1){ V.tx += now.x - prev.x; V.ty += now.y - prev.y; moved += Math.abs(now.x - prev.x) + Math.abs(now.y - prev.y); apply(); return; }
+  // two fingers: zoom by the change in distance, around the point between them, and follow that point
+  const [a, b] = [...pts.values()], mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist = Math.hypot(a.x - b.x, a.y - b.y);
+  if (last){ const px = (last.mid.x - V.tx) / V.s, py = (last.mid.y - V.ty) / V.s; V.s = Math.min(V.max, Math.max(V.fit, V.s * dist / last.dist)); V.tx = mid.x - px * V.s; V.ty = mid.y - py * V.s; apply(); }
+  last = { mid, dist }; moved += 20;
+});
+const up = e => {
+  if (!pts.has(e.pointerId)) return;
+  const p = pts.get(e.pointerId); pts.delete(e.pointerId); last = null;
+  if (!pts.size) view.classList.remove('drag');
+  if (moved > 10 || pts.size) return;
+  // double tap: zoom in twice as close there; at the closest, back to the whole page
+  const now = Date.now();
+  if (now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 30){ lastTap.t = 0; zoomAt(V.s >= V.max * .999 ? V.fit : Math.min(V.max, V.s * 2.5), p.x, p.y); }
+  else lastTap = { t: now, x: p.x, y: p.y };
+};
+view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
+// a drag or pinch that happens to end on the QR area must not open its link
+$('links').addEventListener('click', e => { if (moved > 10) e.preventDefault(); });
+view.addEventListener('wheel', e => {
+  if (!V.page) return; e.preventDefault();
+  const p = local(e), f = Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0025));   // ctrlKey = trackpad pinch
+  zoomAt(Math.min(V.max, Math.max(V.fit, V.s * f)), p.x, p.y);
+}, { passive: false });
+// Safari's own pinch events would zoom the whole page; the pointer handling above does it instead
+for (const ev of ['gesturestart', 'gesturechange']) document.addEventListener(ev, e => e.preventDefault());
+
+$('zIn').onclick = () => zoomAt(Math.min(V.max, V.s * 2), vw() / 2, vh() / 2);
+$('zOut').onclick = () => zoomAt(Math.max(V.fit, V.s / 2), vw() / 2, vh() / 2);
+$('zFit').onclick = () => { V.s = V.fit; apply(); };
+document.addEventListener('keydown', e => { if (!V.page || e.target.closest('input')) return; if (e.key === '+' || e.key === '=') $('zIn').click(); if (e.key === '-') $('zOut').click(); if (e.key === '0') $('zFit').click(); });
+let resizeT = 0; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (!V.page) return; const atFit = V.s <= V.fit * 1.001; V.fit = Math.min((vw() - 24) / V.W, (vh() - 24) / V.H); V.max = Math.max(V.fit * 4, 6); if (atFit) V.s = V.fit; rendered = null; apply(); }, 200); });
+
+/* ================= opening ================= */
 async function open(password){
   let r;
   try {
@@ -111,9 +201,13 @@ async function open(password){
   $('title').textContent = r.title || 'Family tree'; document.title = $('title').textContent;
   box('<p>Opening the family tree…</p>');
   try {
-    doc = await pdfjsLib.getDocument({ url: r.file, isEvalSupported: false }).promise;
-    await render();
-    $('card').hidden = true; $('zIn').disabled = $('zFit').disabled = false;
+    const doc = await pdfjsLib.getDocument({ url: r.file, isEvalSupported: false }).promise;
+    V.page = await doc.getPage(1);
+    const base = V.page.getViewport({ scale: 1 }); V.W = base.width; V.H = base.height;
+    await renderOverview(); await readLinks();
+    $('card').hidden = true; $('zFit').disabled = false;
+    fitPage();
+    $('hint').hidden = false; setTimeout(() => { $('hint').style.opacity = 0; }, 3500);
   } catch (e){ console.error(e); say('Could not open the family tree', 'Please try again in a moment.'); }
 }
 

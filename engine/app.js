@@ -315,14 +315,14 @@ async function exportPDF(paper){
     await waitPhotos(); let c = null; for (const s of [9000, 6000, 4000]){ c = renderToCanvas(s); if (c) break; } if (!c) throw new Error('this device could not draw the chart');
     const bytes = b64bytes(c.toDataURL('image/jpeg', .9).split(',')[1]);
     const content = 'q ' + pw.toFixed(2) + ' 0 0 ' + ph.toFixed(2) + ' 0 0 cm /I0 Do Q\n' + pdfQR(window.FT_PDF_EXTRA, pw, ph);
-    await saveFile(slug() + '.pdf', await makePDF({ wPt: pw, hPt: ph, content, images: [{ w: c.width, h: c.height, n: 3, bytes }], title })); return;
+    await saveFile(slug() + '.pdf', await makePDF({ wPt: pw, hPt: ph, content, images: [{ w: c.width, h: c.height, n: 3, bytes }], title, links: pdfQRLinks(window.FT_PDF_EXTRA, pw, ph) })); return;
   }
   // a host page can supply sharper photos for print: FT_EXPORT_PHOTOS([{ id, px }]) -> { id: jpeg data URL }, px = circle size at 300 dpi
   const hi = window.FT_EXPORT_PHOTOS ? await window.FT_EXPORT_PHOTOS(lay.people.map(qp => ({ id: qp.p.id, px: Math.ceil(2 * qp.r * sc / 72 * 300) }))) : {};
   const images = [], index = new Map(), seen = new Map();
   for (const qp of lay.people){ const k = photoKeyFor(qp.p), url = hi[qp.p.id] || (k && S.photos[k]); if (!url) continue; let i = seen.get(url); if (i == null){ if (!/^data:image\/jpeg/.test(url)) continue; const bytes = b64bytes(url.split(',')[1]), inf = jpegInfo(bytes); if (!inf) continue; i = images.length; images.push({ w: inf.w, h: inf.h, n: inf.n, bytes }); seen.set(url, i); } index.set(qp.p.id, i); }
   const content = chartToPDFContent(lay, index, sc, pw, ph) + '\n' + pdfQR(window.FT_PDF_EXTRA, pw, ph);   // host page may add a QR (FT_PDF_EXTRA)
-  await saveFile(slug() + '.pdf', await makePDF({ wPt: pw, hPt: ph, content, images, title }));
+  await saveFile(slug() + '.pdf', await makePDF({ wPt: pw, hPt: ph, content, images, title, links: pdfQRLinks(window.FT_PDF_EXTRA, pw, ph) }));
 }
 
 /* ============ remember uploads on this device ============ */
