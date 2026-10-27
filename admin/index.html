@@ -59,6 +59,13 @@
   <section class="card" id="cleanCard">
     <h2>Data clean-up</h2>
     <p class="hint">Runs every night at 3:00 IST and deletes what the privacy notice promises: projects 12 months after delivery (or after 24 months untouched), rejected or replaced photos after 30 days, unanswered enquiries after 24 months, and leftover files.</p>
+    <div class="meter-box" id="usage" hidden>
+      <div class="meter-row"><b>File storage</b><span id="uFilesText" class="muted"></span></div>
+      <div class="meter"><i id="uFilesBar"></i></div>
+      <div class="meter-row"><b>Database</b><span id="uDbText" class="muted"></span></div>
+      <div class="meter"><i id="uDbBar"></i></div>
+      <p class="warn" id="uWarn" hidden></p>
+    </div>
     <p id="lastRun" class="muted"></p>
     <div id="due" hidden></div>
     <div class="acts"><button class="btn" id="previewBtn">Preview what is due</button><button class="btn danger" id="runBtn">Run clean-up now</button></div>
@@ -73,7 +80,7 @@
 
 <script type="module">
 import { sb, configured, $, esc, toast, when, STATUS, currentAdmin, ask } from '../js/sb.js';
-import { SUPABASE_URL, SUPABASE_KEY } from '../config.js';
+import { SUPABASE_URL, SUPABASE_KEY, LIMITS_MB } from '../config.js';
 
 let projects = [];
 
@@ -81,7 +88,7 @@ async function show(){
   if (!configured){ $('setupView').hidden = false; return; }
   const u = await currentAdmin();
   $('loginView').hidden = !!u; $('listView').hidden = !u; $('signOut').hidden = !u; $('tabs').hidden = !u; $('who').textContent = u ? u.email : '';
-  if (u){ loadProjects(); newEnquiries(); lastRun(); }
+  if (u){ loadProjects(); newEnquiries(); lastRun(); usage(); }
 }
 
 $('loginForm').onsubmit = async e => {
@@ -107,6 +114,18 @@ async function cleanup(dry){
   return j;
 }
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+/* ---- storage meter ---- */
+const mb = b => b / 1048576, fmt = b => mb(b) < 1 ? Math.max(1, Math.round(b / 1024)) + ' KB' : mb(b) < 1024 ? mb(b).toFixed(mb(b) < 10 ? 1 : 0) + ' MB' : (mb(b) / 1024).toFixed(2) + ' GB';
+async function usage(){
+  const { data: u, error } = await sb.rpc('storage_usage'); if (error) return;
+  const files = u.photos + u.charts, fp = mb(files) / LIMITS_MB.files * 100, dp = mb(u.database) / LIMITS_MB.database * 100;
+  $('uFilesText').textContent = fmt(files) + ' of ' + fmt(LIMITS_MB.files * 1048576) + ' (photos ' + fmt(u.photos) + ', chart PDFs ' + fmt(u.charts) + ', ' + u.files + ' files)';
+  $('uDbText').textContent = fmt(u.database) + ' of ' + fmt(LIMITS_MB.database * 1048576);
+  for (const [bar, pc] of [['uFilesBar', fp], ['uDbBar', dp]]){ $(bar).style.width = Math.min(100, Math.max(1, pc)) + '%'; $(bar).className = pc >= 80 ? 'hot' : ''; }
+  const hot = fp >= 80 ? 'File storage' : dp >= 80 ? 'The database' : '';
+  $('uWarn').hidden = !hot; $('uWarn').textContent = hot ? hot + ' is over 80% full. Run the clean-up, delete finished projects, or move to a bigger plan before it fills up.' : '';
+  $('usage').hidden = false;
+}
 async function lastRun(){
   const { data } = await sb.from('retention_runs').select('*').order('ran_at', { ascending: false }).limit(1).maybeSingle();
   $('lastRun').textContent = data ? 'Last run ' + when(data.ran_at) + (data.trigger === 'admin' ? ' (by you)' : '') + ': removed ' + [plural(data.projects, 'project'), plural(data.photos, 'photo'), plural(data.files, 'file'), data.enquiries + (data.enquiries === 1 ? ' enquiry' : ' enquiries'), plural(data.links, 'old link')].join(', ') + '.' + (data.errors ? ' Problems: ' + data.errors : '') : 'Has not run yet.';
@@ -127,7 +146,7 @@ $('previewBtn').onclick = async () => {
 $('runBtn').onclick = async () => {
   if (!await ask({ title: 'Run the clean-up now?', text: 'Everything past its retention period will be deleted. This cannot be undone.', ok: 'Run clean-up', danger: true })) return;
   $('runBtn').disabled = true; $('runBtn').textContent = 'Cleaning up…';
-  try { const r = await cleanup(false); toast(r.ok ? 'Clean-up finished' : 'Clean-up finished with problems: ' + r.errors, 7000); $('due').hidden = true; await lastRun(); loadProjects(); }
+  try { const r = await cleanup(false); toast(r.ok ? 'Clean-up finished' : 'Clean-up finished with problems: ' + r.errors, 7000); $('due').hidden = true; await lastRun(); usage(); loadProjects(); }
   catch (e){ toast('Clean-up failed: ' + e.message, 7000); }
   $('runBtn').disabled = false; $('runBtn').textContent = 'Run clean-up now';
 };
