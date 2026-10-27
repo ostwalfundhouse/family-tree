@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Project · Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
+<link rel="stylesheet" href="admin.css">
+
+<header class="bar">
+  <a class="brand" href="./">Family Tree · Admin</a>
+  <nav class="tabs"><a href="./">Projects</a><a href="enquiries.html">Enquiries</a></nav>
+  <span class="who" id="who"></span>
+</header>
+
+<main id="view" hidden>
+  <div class="head">
+    <div>
+      <div class="crumbs"><a href="./">Projects</a></div>
+      <h1 id="title"></h1>
+    </div>
+    <div class="acts" style="flex-direction:column;align-items:flex-end;gap:4px"><span class="pill" id="statusPill"></span><span class="hint" id="purgeDate"></span></div>
+  </div>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Details</h2>
+      <form class="fields" id="details">
+        <label class="f wide">Project name<input class="field" id="dName" required maxlength="120"></label>
+        <label class="f">Customer name<input class="field" id="dCust" maxlength="120"></label>
+        <label class="f">Customer mobile<input class="field" id="dPhone" type="tel" maxlength="30"></label>
+        <label class="f">Customer email<input class="field" id="dEmail" type="email" maxlength="200"></label>
+        <label class="f">Status<select class="field" id="dStatus"></select></label>
+        <label class="f wide">Title in the centre of the chart<input class="field" id="dTitle" maxlength="60" placeholder="Leave empty to use the family surname"></label>
+        <label class="f wide">Notes (only you see these)<textarea class="field" id="dNotes" maxlength="4000"></textarea></label>
+        <div class="acts wide"><button class="btn primary" type="submit" id="saveBtn">Save details</button><span class="hint" id="saved"></span></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Family sheet</h2>
+      <div class="stat"><div><b id="sPeople">0</b><span>people</span></div><div><b id="sIssues">0</b><span>things to check</span></div></div>
+      <p class="hint" id="sheetInfo"></p>
+      <div class="acts">
+        <button class="btn primary" id="upBtn">Upload sheet</button>
+        <button class="btn" id="downBtn">Download sheet</button>
+        <a class="btn" href="../data/sample-family-dummy.xlsx" download>Example sheet</a>
+      </div>
+      <input type="file" id="fSheet" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+
+      <div id="pending" class="card" style="background:var(--paper)" hidden>
+        <p id="pendingText" style="margin:0"></p>
+        <ul class="issues" id="pendingIssues"></ul>
+        <div class="acts"><button class="btn primary" id="confirmBtn">Save to project</button><button class="btn" id="discardBtn">Cancel</button></div>
+      </div>
+
+      <div id="issuesBox" hidden><h2 style="margin-bottom:8px">Things to check</h2><ul class="issues" id="issues"></ul></div>
+      <p class="hint">Columns: id, name, gender (M/F), parent_id, spouse_id, birth, mobile, photo. Uploading a corrected sheet keeps photos already added.</p>
+    </section>
+  </div>
+
+  <section class="card" id="linkCard">
+    <div class="head"><h2>Photo link for the customer</h2></div>
+    <p class="hint">A private page where the family adds a photo for each person. Anyone with the link can upload, so send it only to the customer. Photos wait here for your review.</p>
+    <div id="links"></div>
+    <div class="acts">
+      <label class="f" style="flex-direction:row;align-items:center;gap:8px">Valid for
+        <select class="field" id="linkDays" style="width:auto"><option value="7">7 days</option><option value="14">14 days</option><option value="30" selected>30 days</option><option value="60">60 days</option><option value="90">90 days</option><option value="permanent">Never expires</option></select>
+      </label>
+      <button class="btn primary" id="linkNew">Create photo link</button>
+    </div>
+  </section>
+
+  <section class="card" id="photosCard">
+    <div class="head">
+      <h2>People and photos</h2>
+      <div class="stat" id="phStats"></div>
+    </div>
+    <div class="acts">
+      <input class="field" id="phSearch" type="search" placeholder="Find a person" style="max-width:240px">
+      <select class="field" id="phFilter" style="width:auto" aria-label="Show">
+        <option value="all">Everyone</option>
+        <option value="pending">Waiting for review</option>
+        <option value="none">Needs a photo</option>
+        <option value="approved">Has a photo</option>
+      </select>
+      <button class="btn" id="phBulk">Add photos by file name</button>
+      <input type="file" id="fBulk" accept="image/*" multiple hidden>
+      <input type="file" id="fOne" accept="image/*" hidden>
+    </div>
+    <p class="hint">File names are matched to the sheet's photo column, then the person's id, then their full name (for example <code>satish.jpg</code> or <code>12.jpg</code>). Photos you add are approved straight away.</p>
+    <div id="phList" class="people"></div>
+    <p class="empty" id="phEmpty" hidden>Nobody matches.</p>
+  </section>
+
+  <section class="card" id="sgCard" hidden>
+    <div class="head"><h2>Suggestions from the family</h2><div class="stat"><div><b id="sgCount">0</b><span>waiting</span></div></div></div>
+    <p class="hint">Name corrections, new people and removals sent through the photo link. Nothing changes until you approve. You can correct a name before approving.</p>
+    <ul class="sugs" id="sgList"></ul>
+  </section>
+
+  <section class="card" id="edCard" hidden>
+    <div class="head"><h2>Changes from the family</h2><div class="stat"><div><b id="edCount">0</b><span>in force</span></div></div></div>
+    <p class="hint">Birth dates and mobile numbers changed through the photo link go onto the chart straight away. Undo puts back the old value.</p>
+    <ul class="edits" id="edList"></ul>
+  </section>
+
+  <section class="card" id="chartsCard">
+    <div class="head"><h2>Final chart (PDF) for the customer</h2></div>
+    <p class="hint">Makes the print-ready PDF from the chart preview below, using the preview's Options (birth dates, mobile numbers, title), and a QR code to forward or frame. The QR never changes: scanning it opens this PDF on the phone, view only, with no download or share button. After family changes, press Update PDF and the same QR shows the new version. If the QR will be framed, switch mobile numbers off in the preview's Options first.</p>
+    <form class="fields" id="chForm">
+      <label class="f">Paper<select class="field" id="chPaper"><option value="full">Full size</option><option value="a0">A0</option><option value="a1">A1</option><option value="a2">A2</option><option value="a3">A3</option></select></label>
+      <label class="f">Password for the QR (optional)<input class="field" id="chPw" maxlength="64" autocomplete="off" placeholder="Leave empty for no password"></label>
+      <label class="f wide check"><input type="checkbox" id="chQr" checked> Put a QR code in the bottom-right corner of the PDF that opens the family's private link (it never expires; switch it on or off in the photo link section)</label>
+      <div class="acts wide"><button class="btn primary" type="submit" id="chMake">Make and save PDF</button><span class="hint" id="chStatus"></span></div>
+    </form>
+    <div id="chList" class="charts"></div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Chart preview</h2><a class="btn" id="fullBtn" target="_blank" rel="noopener">Open full screen</a></div>
+    <div class="preview"><iframe id="preview" title="Chart preview"></iframe></div>
+    <p class="hint" id="noPeople" hidden>Upload the family sheet to see the chart.</p>
+  </section>
+
+  <section class="card">
+    <h2>Delete</h2>
+    <p class="hint">Removes the project, its people and its photos for good. Use <b>Archived</b> status to keep it out of the list instead.</p>
+    <div class="acts"><button class="btn danger" id="delBtn">Delete project</button></div>
+  </section>
+</main>
+
+<div id="toast" role="status" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="../engine/widths.js"></script>
+<script src="../engine/core.js"></script>
+<script type="module">
+import { sb, $, esc, toast, when, STATUS, requireAdmin, loadRows, ask } from '../js/sb.js';
+import { allPaths } from '../js/photo.js';
+import * as photos from './photos.js';
+import * as edits from './edits.js';
+import * as charts from './charts.js';
+
+const id = new URLSearchParams(location.search).get('id');
+let project = null, rows = [], staged = null;
+const TODAY = new Date();
+
+$('dStatus').innerHTML = Object.entries(STATUS).map(([k, v]) => '<option value="' + k + '">' + v + '</option>').join('');
+
+async function load(){
+  const u = await requireAdmin(); $('who').textContent = u.email;
+  const { data, error } = await sb.from('projects').select('*').eq('id', id).maybeSingle();
+  if (error || !data){ document.body.insertAdjacentHTML('beforeend', '<main><div class="card"><h1>Project not found</h1><p><a href="./">Back to projects</a></p></div></main>'); return; }
+  project = data; rows = await loadRows(id);
+  fillDetails(); renderSheet(); refreshPreview();
+  $('view').hidden = false;
+  // after any change to the people: reload them and redraw every section that shows them
+  const reload = async () => { rows = await loadRows(id); renderSheet(); refreshPreview(); photos.render(); edits.load(); };
+  photos.init({ projectId: id, getProject: () => project, setProject: p => { project = p; fillDetails(); }, getRows: () => rows, onChange: refreshPreview, reload });
+  edits.init({ projectId: id, getRows: () => rows, onChange: reload });
+  charts.init({ projectId: id, getProject: () => project, linksChanged: photos.loadLinks });
+}
+
+function fillDetails(){
+  const p = project;
+  document.title = p.name + ' · Admin'; $('title').textContent = p.name;
+  $('statusPill').textContent = STATUS[p.status]; $('statusPill').className = 'pill ' + p.status;
+  // mirrors public.retention_plan(): 12 months after delivery, else 24 months without changes
+  const purge = new Date(p.delivered_at || p.updated_at); purge.setMonth(purge.getMonth() + (p.delivered_at ? 12 : 24));
+  $('purgeDate').textContent = 'Data deleted on ' + purge.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + (p.delivered_at ? '' : ' unless the project changes');
+  $('dName').value = p.name; $('dCust').value = p.customer_name || ''; $('dPhone').value = p.customer_phone || ''; $('dEmail').value = p.customer_email || '';
+  $('dStatus').value = p.status; $('dTitle').value = p.chart_title || ''; $('dNotes').value = p.notes || '';
+}
+$('details').onsubmit = async e => {
+  e.preventDefault();
+  const v = k => $(k).value.trim() || null, status = $('dStatus').value;
+  const patch = { name: v('dName'), customer_name: v('dCust'), customer_phone: v('dPhone'), customer_email: v('dEmail'), status, chart_title: v('dTitle'), notes: v('dNotes') };
+  if (status === 'delivered' && !project.delivered_at) patch.delivered_at = new Date().toISOString();
+  if (status !== 'delivered' && status !== 'archived') patch.delivered_at = null;
+  $('saveBtn').disabled = true;
+  const { data, error } = await sb.from('projects').update(patch).eq('id', id).select('*').single();
+  $('saveBtn').disabled = false;
+  if (error){ toast('Could not save: ' + error.message, 6000); return; }
+  const titleChanged = (data.chart_title || '') !== (project.chart_title || '');
+  project = data; fillDetails(); $('saved').textContent = 'Saved ' + when(data.updated_at);
+  if (titleChanged) refreshPreview();
+};
+
+function issueList(list){ return list.slice(0, 80).map(i => '<li>' + esc(i.t) + '</li>').join('') + (list.length > 80 ? '<li>and ' + (list.length - 80) + ' more</li>' : ''); }
+function renderSheet(){
+  const m = buildModel(rows, TODAY);
+  $('sPeople').textContent = m.list.length; $('sIssues').textContent = m.issues.length;
+  $('sheetInfo').textContent = project.sheet_filename ? 'Last upload: ' + project.sheet_filename + ', ' + when(project.sheet_uploaded_at) : 'No sheet uploaded yet.';
+  $('issuesBox').hidden = !m.issues.length; $('issues').innerHTML = issueList(m.issues);
+  $('downBtn').disabled = !rows.length;
+}
+
+/* ---- upload: parse and check in the browser, save only after the admin confirms ---- */
+$('upBtn').onclick = () => $('fSheet').click();
+$('fSheet').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const table = /\.csv$/i.test(f.name) || f.type === 'text/csv' ? parseCSV(await f.text()) : await readXLSX(await f.arrayBuffer());
+    const parsed = tableToRows(table); if (!parsed.length) throw new Error('No people found below the header row.');
+    // same rule as the chart: a repeated id keeps the first row
+    const seen = new Set(), clean = parsed.filter(r => !seen.has(r.id) && seen.add(r.id));
+    const m = buildModel(clean, TODAY), before = new Set(rows.map(r => r.id));
+    const added = clean.filter(r => !before.has(r.id)).length, removed = rows.filter(r => !seen.has(r.id)).length;
+    staged = { rows: clean, name: f.name };
+    // details the family typed in through the photo link that this sheet would put back to something else
+    const now = new Map(rows.map(r => [r.id, r])), next = new Map(clean.map(r => [r.id, r])), field = { birth: 'birth', mobile: 'mobile' };
+    const norm = (f, v) => f === 'birth' ? parseDate(v) : String(v || '').trim();
+    const lost = [...new Set(edits.familyEdited().filter(e => now.has(e.person_pid) && next.has(e.person_pid) &&
+      norm(e.field, next.get(e.person_pid)[field[e.field]]) !== norm(e.field, now.get(e.person_pid)[field[e.field]])).map(e => now.get(e.person_pid).name))];
+    $('pendingText').innerHTML = '<b>' + esc(f.name) + '</b>: ' + clean.length + ' people' + (rows.length ? ' (' + added + ' new, ' + removed + ' removed)' : '') + ', ' + (m.issues.length ? m.issues.length + ' thing' + (m.issues.length > 1 ? 's' : '') + ' to check.' : 'nothing to fix.') +
+      (lost.length ? '<br><b class="warn">This sheet would overwrite details the family entered for ' + lost.length + (lost.length === 1 ? ' person' : ' people') + ': ' + esc(lost.slice(0, 5).join(', ')) + (lost.length > 5 ? ' and ' + (lost.length - 5) + ' more' : '') + '.</b> Download the sheet first to start from the latest details.' : '');
+    $('pendingIssues').innerHTML = issueList(m.issues);
+    $('pending').hidden = false;
+  } catch (err){ console.error(err); toast('Could not read ' + f.name + '. ' + (err.message || ''), 7000); }
+};
+$('discardBtn').onclick = () => { staged = null; $('pending').hidden = true; };
+$('confirmBtn').onclick = async () => {
+  if (!staged) return; $('confirmBtn').disabled = true;
+  const { error } = await sb.rpc('replace_people', { p_project: id, p_rows: staged.rows, p_filename: staged.name });
+  $('confirmBtn').disabled = false;
+  if (error){ toast('Could not save the sheet: ' + error.message, 7000); return; }
+  toast(staged.rows.length + ' people saved');
+  staged = null; $('pending').hidden = true;
+  const r = await sb.from('projects').select('*').eq('id', id).single(); if (!r.error) project = r.data;
+  rows = await loadRows(id); renderSheet(); refreshPreview(); photos.render(); edits.load();
+};
+
+$('downBtn').onclick = () => {
+  const blob = writeXLSX(['id', 'name', 'gender', 'parent_id', 'spouse_id', 'birth', 'mobile', 'photo'], rows.map(r => [r.id, r.name, r.gender, r.parent_id, r.spouse_id, r.birth, r.mobile, r.photo]));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'family') + '-sheet.xlsx';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+};
+
+function refreshPreview(){
+  const url = '../viewer.html?project=' + id;
+  $('fullBtn').href = url;
+  $('preview').closest('.preview').hidden = !rows.length; $('noPeople').hidden = !!rows.length; $('fullBtn').hidden = !rows.length;
+  if (rows.length) $('preview').src = url + '&t=' + Date.now();
+}
+
+$('delBtn').onclick = async () => {
+  if (!await ask({ title: 'Delete this project?', text: '"' + project.name + '" will be deleted with all its people and photos. This cannot be undone.', typeWord: 'DELETE', ok: 'Delete project', danger: true })) return;
+  const { data: ph } = await sb.from('photos').select('storage_path').eq('project_id', id);
+  if (ph && ph.length) await sb.storage.from('photos').remove(ph.flatMap(p => allPaths(p.storage_path)));
+  const { error } = await sb.from('projects').delete().eq('id', id);
+  if (error){ toast('Could not delete: ' + error.message, 6000); return; }
+  location.href = './';
+};
+
+load();
+</script>
+</html>

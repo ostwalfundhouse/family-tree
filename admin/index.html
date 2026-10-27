@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Projects · Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
+<link rel="stylesheet" href="admin.css">
+
+<header class="bar">
+  <a class="brand" href="./">Family Tree · Admin</a>
+  <nav class="tabs" id="tabs" hidden><a href="./" aria-current="page">Projects</a><a href="enquiries.html">Enquiries<span class="dot" id="newDot" hidden></span></a></nav>
+  <span class="who" id="who"></span>
+  <button class="btn" id="signOut" hidden>Sign out</button>
+</header>
+
+<!-- signed out -->
+<main id="loginView" hidden>
+  <form class="card login" id="loginForm">
+    <h1>Sign in</h1>
+    <label class="f">Email<input class="field" type="email" id="email" autocomplete="username" required></label>
+    <label class="f">Password<input class="field" type="password" id="password" autocomplete="current-password" required></label>
+    <p class="err" id="loginErr" hidden></p>
+    <div class="acts"><button class="btn primary" type="submit" id="loginBtn">Sign in</button></div>
+  </form>
+</main>
+
+<!-- signed in -->
+<main id="listView" hidden>
+  <div class="head">
+    <h1>Projects</h1>
+    <div class="acts">
+      <select class="field" id="filter" aria-label="Show projects" style="width:auto">
+        <option value="open">Open projects</option>
+        <option value="all">All projects</option>
+        <option value="archived">Archived</option>
+      </select>
+      <button class="btn primary" id="newBtn">New project</button>
+    </div>
+  </div>
+
+  <form class="card fields" id="newForm" hidden>
+    <h2 class="wide">New project</h2>
+    <label class="f">Project name<input class="field" id="nName" required maxlength="120" placeholder="e.g. Sharma family, Jaipur"></label>
+    <label class="f">Customer name<input class="field" id="nCust" maxlength="120"></label>
+    <label class="f">Customer mobile<input class="field" id="nPhone" type="tel" maxlength="30"></label>
+    <label class="f">Customer email<input class="field" id="nEmail" type="email" maxlength="200"></label>
+    <div class="acts wide"><button class="btn primary" type="submit">Create project</button><button class="btn" type="button" id="newCancel">Cancel</button></div>
+  </form>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="list" id="table">
+      <thead><tr><th>Project</th><th class="opt">Customer</th><th>Status</th><th class="num">People</th><th class="opt">Updated</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>No projects here yet. Use <b>New project</b> to start one.</p>
+  </div>
+
+  <section class="card" id="cleanCard">
+    <h2>Data clean-up</h2>
+    <p class="hint">Runs every night at 3:00 IST and deletes what the privacy notice promises: projects 12 months after delivery (or after 24 months untouched), rejected or replaced photos after 30 days, unanswered enquiries after 24 months, and leftover files.</p>
+    <p id="lastRun" class="muted"></p>
+    <div id="due" hidden></div>
+    <div class="acts"><button class="btn" id="previewBtn">Preview what is due</button><button class="btn danger" id="runBtn">Run clean-up now</button></div>
+  </section>
+</main>
+
+<main id="setupView" hidden>
+  <div class="card"><h1>Almost there</h1><p>Add the Supabase project URL and publishable key to <code>web/config.js</code>, then reload.</p></div>
+</main>
+
+<div id="toast" role="status" hidden></div>
+
+<script type="module">
+import { sb, configured, $, esc, toast, when, STATUS, currentAdmin, ask } from '../js/sb.js';
+import { SUPABASE_URL, SUPABASE_KEY } from '../config.js';
+
+let projects = [];
+
+async function show(){
+  if (!configured){ $('setupView').hidden = false; return; }
+  const u = await currentAdmin();
+  $('loginView').hidden = !!u; $('listView').hidden = !u; $('signOut').hidden = !u; $('tabs').hidden = !u; $('who').textContent = u ? u.email : '';
+  if (u){ loadProjects(); newEnquiries(); lastRun(); }
+}
+
+$('loginForm').onsubmit = async e => {
+  e.preventDefault(); $('loginErr').hidden = true; $('loginBtn').disabled = true;
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+  $('loginBtn').disabled = false;
+  if (error){ $('loginErr').textContent = error.message; $('loginErr').hidden = false; return; }
+  if (!await currentAdmin()){ $('loginErr').textContent = 'This account is not an admin.'; $('loginErr').hidden = false; return; }
+  show();
+};
+$('signOut').onclick = async () => { await sb.auth.signOut(); show(); };
+
+async function newEnquiries(){
+  const { count } = await sb.from('enquiries').select('id', { count: 'exact', head: true }).eq('status', 'new');
+  $('newDot').textContent = count || ''; $('newDot').hidden = !count;
+}
+/* ---- data clean-up (retention edge function) ---- */
+async function cleanup(dry){
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(SUPABASE_URL + '/functions/v1/retention', { method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ dry }) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok && !j.trigger) throw new Error(j.error || 'the clean-up did not answer');
+  return j;
+}
+const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+async function lastRun(){
+  const { data } = await sb.from('retention_runs').select('*').order('ran_at', { ascending: false }).limit(1).maybeSingle();
+  $('lastRun').textContent = data ? 'Last run ' + when(data.ran_at) + (data.trigger === 'admin' ? ' (by you)' : '') + ': removed ' + [plural(data.projects, 'project'), plural(data.photos, 'photo'), plural(data.files, 'file'), data.enquiries + (data.enquiries === 1 ? ' enquiry' : ' enquiries'), plural(data.links, 'old link')].join(', ') + '.' + (data.errors ? ' Problems: ' + data.errors : '') : 'Has not run yet.';
+}
+$('previewBtn').onclick = async () => {
+  $('previewBtn').disabled = true; $('previewBtn').textContent = 'Checking…';
+  try {
+    const d = await cleanup(true), total = d.projects.length + d.photos + d.files + d.enquiries + d.links;
+    $('due').hidden = false;
+    $('due').innerHTML = total ? '<ul class="issues">' +
+      d.projects.map(p => '<li>Project <b>' + esc(p.name) + '</b> (' + (p.delivered_at ? 'delivered ' + when(p.delivered_at) : 'unchanged since ' + when(p.updated_at)) + ')</li>').join('') +
+      (d.photos ? '<li>' + plural(d.photos, 'rejected or replaced photo') + '</li>' : '') + (d.files ? '<li>' + plural(d.files, 'stored file') + '</li>' : '') +
+      (d.enquiries ? '<li>' + d.enquiries + ' old ' + (d.enquiries === 1 ? 'enquiry' : 'enquiries') + '</li>' : '') + (d.links ? '<li>' + plural(d.links, 'expired link') + '</li>' : '') + '</ul>'
+      : '<p class="hint">Nothing is due for deletion.</p>';
+  } catch (e){ toast('Could not preview: ' + e.message, 6000); }
+  $('previewBtn').disabled = false; $('previewBtn').textContent = 'Preview what is due';
+};
+$('runBtn').onclick = async () => {
+  if (!await ask({ title: 'Run the clean-up now?', text: 'Everything past its retention period will be deleted. This cannot be undone.', ok: 'Run clean-up', danger: true })) return;
+  $('runBtn').disabled = true; $('runBtn').textContent = 'Cleaning up…';
+  try { const r = await cleanup(false); toast(r.ok ? 'Clean-up finished' : 'Clean-up finished with problems: ' + r.errors, 7000); $('due').hidden = true; await lastRun(); loadProjects(); }
+  catch (e){ toast('Clean-up failed: ' + e.message, 7000); }
+  $('runBtn').disabled = false; $('runBtn').textContent = 'Run clean-up now';
+};
+
+async function loadProjects(){
+  const { data, error } = await sb.from('projects').select('id,name,customer_name,status,updated_at,people(count)').order('updated_at', { ascending: false });
+  if (error){ toast('Could not load projects: ' + error.message, 6000); return; }
+  projects = data; render();
+}
+function render(){
+  const f = $('filter').value;
+  const list = projects.filter(p => f === 'all' || (f === 'archived' ? p.status === 'archived' : p.status !== 'archived'));
+  $('rows').innerHTML = list.map(p => '<tr class="go" data-id="' + p.id + '"><td><a href="project.html?id=' + p.id + '">' + esc(p.name) + '</a></td><td class="opt">' + esc(p.customer_name || '') + '</td><td><span class="pill ' + p.status + '">' + STATUS[p.status] + '</span></td><td class="num">' + ((p.people[0] && p.people[0].count) || 0) + '</td><td class="opt muted">' + when(p.updated_at) + '</td></tr>').join('');
+  $('empty').hidden = list.length > 0;
+}
+$('filter').onchange = render;
+$('rows').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr && !e.target.closest('a')) location.href = 'project.html?id=' + tr.dataset.id; };
+
+$('newBtn').onclick = () => { $('newForm').hidden = false; $('nName').focus(); };
+$('newCancel').onclick = () => { $('newForm').reset(); $('newForm').hidden = true; };
+$('newForm').onsubmit = async e => {
+  e.preventDefault();
+  const v = id => $(id).value.trim() || null;
+  const { data, error } = await sb.from('projects').insert({ name: v('nName'), customer_name: v('nCust'), customer_phone: v('nPhone'), customer_email: v('nEmail') }).select('id').single();
+  if (error){ toast('Could not create the project: ' + error.message, 6000); return; }
+  location.href = 'project.html?id=' + data.id;
+};
+
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') show(); });
+show();
+</script>
+</html>

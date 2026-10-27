@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Enquiries · Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
+<link rel="stylesheet" href="admin.css">
+
+<header class="bar">
+  <a class="brand" href="./">Family Tree · Admin</a>
+  <nav class="tabs"><a href="./">Projects</a><a href="enquiries.html" aria-current="page">Enquiries</a></nav>
+  <span class="who" id="who"></span>
+</header>
+
+<main id="view" hidden>
+  <div class="head">
+    <h1>Enquiries</h1>
+    <select class="field" id="filter" aria-label="Show enquiries" style="width:auto">
+      <option value="new">New</option>
+      <option value="contacted">Contacted</option>
+      <option value="closed">Closed</option>
+      <option value="all">All</option>
+    </select>
+  </div>
+  <div id="list" class="enq-list"></div>
+  <p class="empty card" id="empty" hidden>Nothing here.</p>
+</main>
+
+<div id="toast" role="status" hidden></div>
+
+<script type="module">
+import { sb, $, esc, toast, when, requireAdmin, ask } from '../js/sb.js';
+
+const SIZE = { 'under-50': 'Under 50 people', '50-150': '50 to 150 people', '150-300': '150 to 300 people', '300-plus': 'More than 300 people', unsure: 'Size not known yet' };
+let items = [];
+
+async function load(){
+  const u = await requireAdmin(); $('who').textContent = u.email;
+  const { data, error } = await sb.from('enquiries').select('*').order('created_at', { ascending: false }).limit(500);
+  if (error){ toast('Could not load enquiries: ' + error.message, 6000); return; }
+  items = data; render(); $('view').hidden = false;
+}
+
+function wa(phone){ let d = String(phone || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; return d.length >= 11 ? 'https://wa.me/' + d : null; }
+function render(){
+  const f = $('filter').value, list = items.filter(e => f === 'all' || e.status === f);
+  $('empty').hidden = list.length > 0;
+  $('list').innerHTML = list.map(e => {
+    const w = wa(e.phone);
+    return '<article class="card enq" data-id="' + e.id + '">' +
+      '<div class="head"><div><h2 class="enq-name">' + esc(e.name) + '</h2><span class="muted small">' + esc(when(e.created_at)) + (e.city ? ' · ' + esc(e.city) : '') + ' · ' + esc(SIZE[e.family_size] || SIZE.unsure) + '</span></div>' +
+      '<select class="field" data-act="status" aria-label="Status" style="width:auto">' + ['new', 'contacted', 'closed'].map(s => '<option value="' + s + '"' + (s === e.status ? ' selected' : '') + '>' + s[0].toUpperCase() + s.slice(1) + '</option>').join('') + '</select></div>' +
+      (e.message ? '<p class="enq-msg">' + esc(e.message) + '</p>' : '') +
+      '<div class="acts">' +
+        (e.phone ? '<a class="btn" href="tel:' + esc(e.phone) + '">Call ' + esc(e.phone) + '</a>' : '') +
+        (w ? '<a class="btn" target="_blank" rel="noopener" href="' + w + '">WhatsApp</a>' : '') +
+        (e.email ? '<a class="btn" href="mailto:' + esc(e.email) + '">' + esc(e.email) + '</a>' : '') +
+        (e.project_id ? '<a class="btn primary" href="project.html?id=' + e.project_id + '">Open project</a>' : '<button class="btn primary" data-act="project">Create project</button>') +
+        '<button class="btn danger" data-act="delete">Delete</button>' +
+      '</div></article>';
+  }).join('');
+}
+
+$('filter').onchange = render;
+$('list').onchange = async e => {
+  const s = e.target.closest('[data-act="status"]'); if (!s) return;
+  const id = s.closest('[data-id]').dataset.id;
+  const { error } = await sb.from('enquiries').update({ status: s.value }).eq('id', id);
+  if (error){ toast('Could not save: ' + error.message, 6000); return; }
+  items.find(x => x.id === id).status = s.value; toast('Marked ' + s.value); render();
+};
+$('list').onclick = async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const en = items.find(x => x.id === b.closest('[data-id]').dataset.id);
+  if (b.dataset.act === 'project'){
+    const name = (en.name + ' family' + (en.city ? ', ' + en.city : '')).slice(0, 120);
+    const notes = ['From enquiry ' + when(en.created_at), SIZE[en.family_size] || '', en.message || ''].filter(Boolean).join('\n').slice(0, 4000);
+    const { data, error } = await sb.from('projects').insert({ name, customer_name: en.name, customer_phone: en.phone, customer_email: en.email, notes }).select('id').single();
+    if (error){ toast('Could not create the project: ' + error.message, 6000); return; }
+    await sb.from('enquiries').update({ project_id: data.id, status: en.status === 'new' ? 'contacted' : en.status }).eq('id', en.id);
+    location.href = 'project.html?id=' + data.id;
+  }
+  if (b.dataset.act === 'delete'){
+    if (!await ask({ title: 'Delete this enquiry?', text: 'The enquiry from ' + en.name + ' will be deleted. This cannot be undone.', ok: 'Delete', danger: true })) return;
+    const { error } = await sb.from('enquiries').delete().eq('id', en.id);
+    if (error){ toast('Could not delete: ' + error.message, 6000); return; }
+    items = items.filter(x => x !== en); render(); toast('Enquiry deleted');
+  }
+};
+load();
+</script>
+</html>

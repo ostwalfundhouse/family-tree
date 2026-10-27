@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Add family photos and details</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
+<style>
+/* Customer page: phone first, one column, big tap targets. Same palette as the chart. */
+:root{
+  --paper:#F7F3EC; --surface:#FFFFFF; --ink:#1E1B2E; --sub:#5F5A73; --rule:#E4DDD0; --blank:#EEE8DD;
+  --accent:#C9800A; --accent-ink:#1F1602; --chrome:#1D2250; --chrome-ink:#F3F4FB; --chrome-sub:#B4B9DC;
+  --male:#2C7DB6; --female:#CF4C7C; --ok:#2E7D4F; --warn:#B4500F;
+  --ui:"Mukta","Segoe UI",system-ui,sans-serif; --display:"Rozha One",Georgia,serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#15131F; --surface:#1F1C2E; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --blank:#2B2740;
+  --accent:#F0B03A; --chrome:#0C0E20; --male:#62B2E8; --female:#F083A9; --ok:#6CC28E; --warn:#F0A060; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --paper:#15131F; --surface:#1F1C2E; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --blank:#2B2740;
+  --accent:#F0B03A; --chrome:#0C0E20; --male:#62B2E8; --female:#F083A9; --ok:#6CC28E; --warn:#F0A060; color-scheme:dark }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.45}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+header{background:var(--chrome);color:var(--chrome-ink);padding:28px 16px 24px}
+header .in,main{max-width:680px;margin:0 auto}
+header h1{font-family:var(--display);font-weight:400;font-size:clamp(26px,6vw,36px);line-height:1.15;margin:0 0 8px;text-wrap:balance}
+header p{margin:0;color:var(--chrome-sub)}
+main{padding:20px 16px 80px;display:flex;flex-direction:column;gap:18px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.card h2{margin:0;font-size:18px;font-weight:600}
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.hint{color:var(--sub);font-size:14px;margin:0}
+.bar{display:flex;flex-direction:column;gap:6px}
+.meter{height:10px;border-radius:5px;background:var(--blank);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--ok);border-radius:5px;transition:width .3s}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tools input{flex:1 1 200px;min-width:0;height:44px;border-radius:22px;border:1px solid var(--rule);background:var(--surface);padding:0 16px}
+.seg{display:flex;border:1px solid var(--rule);border-radius:22px;overflow:hidden;background:var(--surface)}
+.seg button{height:44px;padding:0 14px;border:0;background:none;cursor:pointer;color:var(--sub);font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+ul.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.p{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--rule);border-radius:14px;padding:10px 12px}
+.av{width:56px;height:56px;border-radius:50%;border:3px solid var(--sub);background:var(--blank);display:grid;place-items:center;overflow:hidden;font-weight:700;color:var(--sub)}
+.av.M{border-color:var(--male)} .av.F{border-color:var(--female)}
+.av img{width:100%;height:100%;object-fit:cover}
+.p b{display:block;font-weight:600;overflow-wrap:anywhere;line-height:1.25}
+.p .rel{display:block;color:var(--sub);font-size:14px;overflow-wrap:anywhere}
+.st{display:inline-block;font-size:13px;margin-top:2px;font-weight:500}
+.st.none{color:var(--warn)} .st.pending{color:var(--accent)} .st.approved{color:var(--ok)}
+.btn{min-height:44px;padding:0 16px;border-radius:22px;border:1px solid var(--rule);background:var(--surface);cursor:pointer;font-weight:600;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.p{grid-template-columns:56px minmax(0,1fr);align-items:start}
+.pd{display:flex;flex-direction:column;gap:2px;min-width:0}
+.det{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:14px;color:var(--sub);margin-top:2px}
+.det .miss{color:var(--warn);font-weight:500}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;padding:12px;border-radius:12px;background:var(--paper);border:1px solid var(--rule)}
+.edit label{display:flex;flex-direction:column;gap:4px;font-size:14px;font-weight:500;min-width:0}
+.edit input{height:44px;border-radius:10px;border:1px solid var(--rule);background:var(--surface);padding:0 12px;min-width:0;width:100%}
+.edit input:focus{border-color:var(--accent);outline:none}
+.edit .err,.edit .row{grid-column:1/-1;margin:0}
+.edit .err{color:var(--warn);font-size:14px}
+.edit .wide,.edit .fh,.edit .hint{grid-column:1/-1;margin:0}
+.edit .fh{font-weight:600}
+.edit select{height:44px;border-radius:10px;border:1px solid var(--rule);background:var(--surface);padding:0 10px;min-width:0;width:100%}
+.more{padding-top:8px;border-top:1px dashed var(--rule)}
+.pwf{display:flex;gap:8px;max-width:360px;margin:16px auto 0}
+.pwf input{flex:1;min-width:0;height:46px;border-radius:23px;border:1px solid var(--rule);background:var(--surface);padding:0 16px;font-size:16px}
+.wait{display:block;font-size:14px;color:var(--accent);font-weight:500;margin-top:2px}
+@media (max-width:420px){ .p{grid-template-columns:48px minmax(0,1fr)} .av{width:48px;height:48px} .edit{grid-template-columns:1fr} }
+.msg{text-align:center;padding:40px 16px}
+.msg h1{font-family:var(--display);font-weight:400;font-size:28px;margin:0 0 8px}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:20;background:var(--chrome);color:var(--chrome-ink);padding:10px 18px;border-radius:22px;max-width:calc(100% - 32px);text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+</style>
+
+<header><div class="in"><h1 id="title">Family photos</h1><p id="sub">Loading your family list…</p></div></header>
+
+<main id="app" hidden>
+  <section class="card">
+    <h2>How this works</h2>
+    <ol class="steps">
+      <li>Find each person below and tap <b>Add photo</b>. Pick a clear photo where the face is easy to see. Old photos are welcome.</li>
+      <li>Check their birth date and mobile number, and tap <b>Add details</b> or <b>Edit details</b> to fill in or correct them. Changes go onto the family tree straight away.</li>
+      <li>Is a name spelled wrong, or someone missing? Tap <b>More</b> to correct the name or add a child, husband or wife. We check these before they go on the tree.</li>
+      <li>We check every photo before it goes on the family tree.</li>
+    </ol>
+  </section>
+
+
+  <section class="bar">
+    <strong id="progressText"></strong>
+    <div class="meter"><i id="meter" style="width:0"></i></div>
+    <span class="hint" id="progressMore"></span>
+  </section>
+
+  <div class="tools">
+    <input id="q" type="search" placeholder="Find a name" aria-label="Find a person by name" autocomplete="off">
+    <div class="seg" role="group" aria-label="Show">
+      <button id="fNeed" aria-pressed="true">Missing something</button>
+      <button id="fAll" aria-pressed="false">Everyone</button>
+    </div>
+  </div>
+
+  <ul class="people" id="list"></ul>
+  <p class="hint" id="none" hidden style="text-align:center">Nobody here. Try "Everyone" or another spelling.</p>
+  <input type="file" id="file" accept="image/*" hidden>
+</main>
+
+<main id="msg" class="msg" hidden></main>
+<div id="toast" role="status" hidden></div>
+
+<script type="module">
+// GitHub Pages cannot send X-Frame-Options: refuse to run inside another site's frame (same-site frames, like the chart preview, are fine)
+try { if (window.top !== window.self && window.top.location.origin !== location.origin) throw 0; } catch (e){ document.documentElement.innerHTML = ''; throw new Error('framed by another site'); }
+
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+import { makeJpegs } from './js/photo.js';
+import { showBirth, typedBirth, readBirth, readMobile, BIRTH_HELP, MOBILE_HELP } from './js/details.js';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(m, ms){ const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, ms || 3500); }
+const rpc = async (fn, body) => (await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+
+const token = location.hash.slice(1).trim().toLowerCase();
+let people = [], suggestions = [], need = true, target = null;
+let open_ = null; // { pid, mode: 'details' | 'more' | 'rename' | 'add_child' | 'add_spouse' | 'remove' } — the one open form
+const previews = new Map(), busy = new Set();
+// the link's password, when it has one: asked once, kept for this browser tab, sent with every call
+let password = (() => { try { return sessionStorage.getItem('ft.pw.' + token) || ''; } catch (e){ return ''; } })();
+const remember = v => { password = v; try { sessionStorage.setItem('ft.pw.' + token, v); } catch (e){} };
+
+function stop(title, text){ $('app').hidden = true; $('msg').hidden = false; $('msg').innerHTML = '<h1>' + esc(title) + '</h1><p>' + esc(text) + '</p>'; $('sub').textContent = ''; }
+
+function askPassword(wrong){
+  $('app').hidden = true; $('msg').hidden = false; $('sub').textContent = '';
+  $('msg').innerHTML = '<h1>Family tree</h1><p>' + (wrong ? 'That password is not right. Please try again.' : 'Enter the password you were given to open this page.') + '</p>' +
+    '<form id="pwf" class="pwf"><input id="pw" type="password" autocomplete="current-password" aria-label="Password"><button class="btn primary">Open</button></form>';
+  $('pw').focus();
+  $('pwf').onsubmit = e => { e.preventDefault(); const v = $('pw').value; if (v){ remember(v); $('msg').innerHTML = '<p>Checking…</p>'; open(); } };
+}
+
+async function open(){
+  if (!/^[0-9a-f]{48}$/.test(token)) return stop('This link is not complete', 'Please open the full link exactly as it was sent to you.');
+  let r;
+  try { r = await rpc('share_open', { p_token: token, p_password: password || null }); }
+  catch (e){ return stop('Could not connect', 'Please check your internet connection and try again.'); }
+  if (r && r.reason === 'password') return askPassword(r.tried);
+  if (r && r.reason === 'locked') return stop('Too many tries', 'Please wait 15 minutes and try again.');
+  if (!r || !r.ok) return stop(r && r.reason === 'expired' ? 'This link has expired' : r && r.reason === 'off' ? 'This link is switched off' : 'This link is not valid',
+    'Please ask us for a new link to add your family photos.');
+  $('msg').hidden = true;
+  people = r.people; suggestions = r.suggestions || [];
+  const t = (r.title || '').trim();
+  $('title').textContent = t ? 'Photos and details for the ' + t + ' tree' : 'Photos and details for your family tree';
+  document.title = $('title').textContent;
+  $('sub').textContent = people.length + ' people' + (r.expires_at ? ' · this link works until ' + new Date(r.expires_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+  $('app').hidden = false; render();
+}
+
+function relation(p){
+  const g = (p.gender || '').toUpperCase()[0];
+  if (p.parent) return (g === 'M' ? 'Son of ' : g === 'F' ? 'Daughter of ' : 'Child of ') + p.parent;
+  if (p.spouse) return (g === 'F' ? 'Wife of ' : g === 'M' ? 'Husband of ' : 'Spouse of ') + p.spouse;
+  return '';
+}
+const initials = n => { const w = n.split(' ').filter(Boolean); return ((w[0] || '')[0] || '') + (w.length > 1 ? w[w.length - 1][0] : ''); };
+const STATUS = { none: 'Photo needed', pending: 'Photo received, we will check it', approved: 'Photo added' };
+const missing = p => p.status === 'none' || !p.birth || !p.mobile;
+const waitingFor = p => suggestions.filter(s => s.pid === p.pid).map(s => s.kind === 'rename' ? 'name change to “' + s.name + '”' : s.kind === 'add_child' ? 'new child “' + s.name + '”' : s.kind === 'add_spouse' ? 'new husband/wife “' + s.name + '”' : 'removal from the list');
+
+function detailsForm(p){
+  return '<form class="edit" data-form="details" data-pid="' + esc(p.pid) + '">' +
+    '<label>Birth date<input name="birth" inputmode="numeric" autocomplete="off" placeholder="27/05/1970, or just 1970" value="' + esc(typedBirth(p.birth)) + '"></label>' +
+    '<label>Mobile<input name="mobile" type="tel" inputmode="tel" autocomplete="off" placeholder="98765 43210" value="' + esc(p.mobile) + '"></label>' +
+    '<p class="err" hidden></p><div class="row"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
+}
+function suggestForm(p, mode){
+  const first = p.name.split(' ')[0], g = (p.gender || '').toUpperCase()[0];
+  const head = { rename: 'Correct the name of ' + first, add_child: 'Add a child of ' + first, add_spouse: 'Add ' + (g === 'M' ? 'the wife' : g === 'F' ? 'the husband' : 'the husband or wife') + ' of ' + first, remove: first + ' should not be on this list' }[mode];
+  const sex = mode === 'add_spouse' ? (g === 'M' ? 'F' : g === 'F' ? 'M' : '') : '';
+  const fields = mode === 'remove' ? '<label class="wide">Why? (optional)<input name="note" maxlength="300" autocomplete="off" placeholder="For example: added twice, or not part of this family"></label>'
+    : '<label class="wide">Full name<input name="name" maxlength="120" autocomplete="off" value="' + (mode === 'rename' ? esc(p.name) : '') + '"></label>' +
+      (mode === 'rename' ? '' : '<label>Male or female<select name="gender"><option value="M"' + (sex === 'M' ? ' selected' : '') + '>Male</option><option value="F"' + (sex === 'F' ? ' selected' : '') + '>Female</option><option value=""' + (sex ? '' : ' selected') + '>Prefer not to say</option></select></label>' +
+        '<label>Birth date (optional)<input name="birth" inputmode="numeric" autocomplete="off" placeholder="27/05/1970 or 1970"></label>' +
+        '<label class="wide">Mobile (optional)<input name="mobile" type="tel" inputmode="tel" autocomplete="off"></label>');
+  return '<form class="edit" data-form="' + mode + '" data-pid="' + esc(p.pid) + '"><p class="fh wide">' + esc(head) + '</p>' + fields +
+    '<p class="hint wide">We check suggestions before they go on the family tree.</p>' +
+    '<p class="err" hidden></p><div class="row"><button class="btn primary" type="submit">Send</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
+}
+
+function render(){
+  const done = people.filter(p => p.status !== 'none').length, noBirth = people.filter(p => !p.birth).length, noMob = people.filter(p => !p.mobile).length;
+  $('progressText').textContent = done + ' of ' + people.length + ' people have a photo';
+  $('progressMore').textContent = noBirth + ' birth date' + (noBirth === 1 ? '' : 's') + ' and ' + noMob + ' mobile number' + (noMob === 1 ? '' : 's') + ' still missing';
+  $('meter').style.width = (people.length ? 100 * done / people.length : 0) + '%';
+  const q = $('q').value.trim().toLowerCase();
+  const shown = people.filter(p => (!need || missing(p) || previews.has(p.pid) || (open_ && open_.pid === p.pid)) && (!q || p.name.toLowerCase().includes(q)));
+  $('none').hidden = shown.length > 0;
+  $('list').innerHTML = shown.map(p => {
+    const g = (p.gender || '').toUpperCase()[0] || '', pv = previews.get(p.pid), b = busy.has(p.pid), off = b ? ' disabled' : '', mine = open_ && open_.pid === p.pid ? open_.mode : null;
+    const det = (p.birth ? '<span>Born ' + esc(showBirth(p.birth)) + '</span>' : '<span class="miss">Birth date missing</span>') +
+                (p.mobile ? '<span>Mobile ' + esc(p.mobile) + '</span>' : '<span class="miss">Mobile missing</span>');
+    const wait = waitingFor(p);
+    const buttons = '<div class="row"><button class="btn' + (p.status === 'none' ? ' primary' : '') + '" data-act="photo" data-pid="' + esc(p.pid) + '"' + off + '>' + (p.status === 'none' ? 'Add photo' : 'Send another photo') + '</button>' +
+      '<button class="btn" data-act="details" data-pid="' + esc(p.pid) + '"' + off + '>' + (p.birth && p.mobile ? 'Edit details' : 'Add details') + '</button>' +
+      '<button class="btn" data-act="more" data-pid="' + esc(p.pid) + '"' + off + ' aria-expanded="' + (mine === 'more') + '">More</button></div>';
+    const more = '<div class="row more"><button class="btn" data-act="rename" data-pid="' + esc(p.pid) + '">Correct the name</button><button class="btn" data-act="add_child" data-pid="' + esc(p.pid) + '">Add a child</button>' +
+      '<button class="btn" data-act="add_spouse" data-pid="' + esc(p.pid) + '">Add husband/wife</button><button class="btn" data-act="remove" data-pid="' + esc(p.pid) + '">Should not be here</button></div>';
+    return '<li class="p"><div class="av ' + g + '">' + (pv ? '<img alt="" src="' + pv + '">' : esc(initials(p.name))) + '</div>' +
+      '<div class="pd"><b>' + esc(p.name) + '</b><span class="rel">' + esc(relation(p)) + '</span>' +
+        '<span class="st ' + p.status + '">' + (b ? 'Sending…' : STATUS[p.status]) + '</span>' +
+        '<span class="det">' + det + '</span>' +
+        (wait.length ? '<span class="wait">Waiting for approval: ' + esc(wait.join(', ')) + '</span>' : '') +
+        (mine === 'details' ? detailsForm(p) : mine && mine !== 'more' ? suggestForm(p, mine) : buttons + (mine === 'more' ? more : '')) +
+      '</div></li>';
+  }).join('');
+}
+
+async function send(p, file){
+  busy.add(p.pid); render();
+  try {
+    const j = await makeJpegs(file);
+    const fd = new FormData();
+    fd.append('token', token); fd.append('pid', p.pid); fd.append('password', password);
+    fd.append('photo', j.main, 'photo.jpg'); fd.append('print', j.print, 'print.jpg'); fd.append('thumb', j.thumb, 'thumb.jpg');
+    const res = await fetch(SUPABASE_URL + '/functions/v1/share-upload', { method: 'POST', headers: { apikey: SUPABASE_KEY }, body: fd });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok || !r.ok) throw new Error(r.error || 'The photo could not be sent. Please try again.');
+    previews.set(p.pid, j.preview); if (p.status !== 'approved') p.status = 'pending';
+    toast('Thank you! Photo of ' + p.name.split(' ')[0] + ' received.');
+  } catch (e){ toast(e.message || String(e), 7000); }
+  busy.delete(p.pid); render();
+}
+
+async function submit(form){
+  const p = people.find(x => x.pid === form.dataset.pid), mode = form.dataset.form, err = form.querySelector('.err');
+  const say = t => { err.textContent = t; err.hidden = false; }, btn = form.querySelector('[type=submit]');
+  const birth = form.birth ? readBirth(form.birth.value) : '', mobile = form.mobile ? readMobile(form.mobile.value) : '';
+  if (birth === null) return say(BIRTH_HELP);
+  if (mobile === null) return say(MOBILE_HELP);
+  if (form.name && !form.name.value.trim()) return say('Please write the full name.');
+  btn.disabled = true;
+  try {
+    if (mode === 'details'){
+      const r = await rpc('share_update_person', { p_token: token, p_pid: p.pid, p_birth: birth, p_mobile: mobile, p_password: password || null });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'Could not save. Please try again.');
+      p.birth = r.birth; p.mobile = r.mobile; open_ = null; render();
+      toast('Saved for ' + p.name.split(' ')[0] + '. It is on the family tree now.');
+    } else {
+      const name = form.name ? form.name.value.trim() : '';
+      const r = await rpc('share_suggest', { p_token: token, p_kind: mode, p_pid: p.pid, p_name: name, p_gender: form.gender ? form.gender.value : '', p_birth: birth, p_mobile: mobile, p_note: form.note ? form.note.value.trim() : '', p_password: password || null });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'Could not send. Please try again.');
+      suggestions.push({ kind: mode, pid: p.pid, name }); open_ = null; render();
+      toast('Thank you! We will check it before it goes on the family tree.');
+    }
+  } catch (e){ say(e.message); btn.disabled = false; }
+}
+
+$('list').onclick = e => {
+  const b = e.target.closest('button[data-act]'); if (!b || b.disabled) return;
+  const act = b.dataset.act, pid = b.dataset.pid;
+  if (act === 'photo'){ target = people.find(p => p.pid === pid); $('file').click(); return; }
+  if (act === 'cancel'){ open_ = null; render(); return; }
+  open_ = act === 'more' && open_ && open_.pid === pid && open_.mode === 'more' ? null : { pid, mode: act };
+  render(); const i = document.querySelector('form.edit input'); if (i) i.focus();
+};
+$('list').onsubmit = e => { e.preventDefault(); submit(e.target); };
+$('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f && target) send(target, f); };
+$('q').oninput = render;
+$('fNeed').onclick = () => { need = true; $('fNeed').setAttribute('aria-pressed', 'true'); $('fAll').setAttribute('aria-pressed', 'false'); render(); };
+$('fAll').onclick = () => { need = false; $('fAll').setAttribute('aria-pressed', 'true'); $('fNeed').setAttribute('aria-pressed', 'false'); render(); };
+open();
+</script>
+</html>

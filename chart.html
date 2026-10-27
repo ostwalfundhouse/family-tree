@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Family tree</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600&family=Rozha+One&display=swap">
+<style>
+/* The page behind a chart QR code: the saved PDF, view only. No download, share or print buttons. */
+:root{
+  --paper:#ECEAE4; --surface:#FFFFFF; --ink:#1E1B2E; --sub:#5F5A73; --rule:#E2DACB;
+  --navy:#1D2250; --navy-ink:#F3F4FB; --navy-sub:#B4B9DC; --accent:#C9800A; --accent-ink:#1F1602; --err:#B3261E;
+  --ui:"Mukta","Segoe UI",system-ui,sans-serif; --display:"Rozha One",Georgia,serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; --err:#F2867E; color-scheme:dark } }
+:root[data-theme="dark"]{ --paper:#121120; --surface:#211E31; --ink:#EEEAF6; --sub:#ABA5C0; --rule:#34304A; --navy:#0C0E20; --accent:#F0B03A; --err:#F2867E; color-scheme:dark }
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--ui);display:flex;flex-direction:column;overflow:hidden}
+[hidden]{display:none!important}
+header{background:var(--navy);color:var(--navy-ink);display:flex;align-items:center;gap:10px;padding:8px 12px 8px 16px;flex:none}
+header h1{font-family:var(--display);font-weight:400;font-size:20px;margin:0 auto 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.zb{min-width:42px;height:38px;border-radius:19px;border:1px solid rgba(255,255,255,.25);background:transparent;color:inherit;font:inherit;font-size:18px;cursor:pointer;padding:0 10px}
+.zb.fit{font-size:14px;font-weight:600}
+.zb:disabled{opacity:.4}
+#view{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;position:relative;touch-action:pan-x pan-y}
+#pages{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px;min-width:min-content}
+#pages canvas{background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.18);display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.card{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+.box{max-width:380px;width:100%;background:var(--surface);border:1px solid var(--rule);border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:12px;text-align:center}
+.box h2{margin:0;font-family:var(--display);font-weight:400;font-size:24px}
+.box p{margin:0;color:var(--sub)}
+.box form{display:flex;flex-direction:column;gap:10px}
+.box input{height:46px;border-radius:12px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);padding:0 14px;font:inherit;font-size:16px}
+.box button{height:46px;border-radius:23px;border:0;background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer}
+@media print{ body{display:none} }
+</style>
+
+<header>
+  <h1 id="title">Family tree</h1>
+  <button class="zb" id="zOut" aria-label="Zoom out" disabled>&minus;</button>
+  <button class="zb fit" id="zFit" aria-label="Fit to screen" disabled>Fit</button>
+  <button class="zb" id="zIn" aria-label="Zoom in" disabled>+</button>
+</header>
+<main id="view"><div id="pages"></div><div class="card" id="card"><div class="box"><p>Opening…</p></div></div></main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script type="module">
+// GitHub Pages cannot send X-Frame-Options: refuse to run inside another site's frame
+try { if (window.top !== window.self && window.top.location.origin !== location.origin) throw 0; } catch (e){ document.documentElement.innerHTML = ''; throw new Error('framed by another site'); }
+
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+
+const $ = id => document.getElementById(id), token = location.hash.slice(1).trim().toLowerCase();
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const box = html => { $('card').hidden = false; $('card').innerHTML = '<div class="box">' + html + '</div>'; };
+const say = (title, text) => box('<h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>');
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// no right-click "save image", no Ctrl+S / Ctrl+P on this page
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && /^[sp]$/i.test(e.key)) e.preventDefault(); });
+
+let doc = null, zoom = 1, rendering = 0;
+const ZOOMS = [1, 1.5, 2, 3, 4, 6], MAX_PIXELS = 16e6; // stay under phone canvas limits
+
+async function render(){
+  const ticket = ++rendering, wrap = $('pages'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const avail = $('view').clientWidth - 32, availH = $('view').clientHeight - 32;
+  for (let n = 1; n <= doc.numPages; n++){
+    const page = await doc.getPage(n), base = page.getViewport({ scale: 1 });
+    const fit = Math.min(avail / base.width, availH / base.height);
+    let scale = fit * zoom * dpr; const px = base.width * base.height * scale * scale;
+    if (px > MAX_PIXELS) scale *= Math.sqrt(MAX_PIXELS / px);
+    const vp = page.getViewport({ scale });
+    let c = wrap.children[n - 1]; if (!c){ c = document.createElement('canvas'); wrap.appendChild(c); }
+    const off = document.createElement('canvas'); off.width = Math.floor(vp.width); off.height = Math.floor(vp.height);
+    await page.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
+    if (ticket !== rendering) return;
+    c.width = off.width; c.height = off.height; c.getContext('2d').drawImage(off, 0, 0);
+    c.style.width = (base.width * fit * zoom) + 'px'; c.style.height = (base.height * fit * zoom) + 'px';
+  }
+}
+async function setZoom(z, cx, cy){
+  const v = $('view'), old = zoom, fx = (v.scrollLeft + (cx ?? v.clientWidth / 2)) / v.scrollWidth, fy = (v.scrollTop + (cy ?? v.clientHeight / 2)) / v.scrollHeight;
+  zoom = z; $('zOut').disabled = zoom <= ZOOMS[0]; $('zIn').disabled = zoom >= ZOOMS[ZOOMS.length - 1];
+  // stretch the current picture first so the zoom feels instant, then redraw sharp
+  for (const c of $('pages').children){ c.style.width = parseFloat(c.style.width) * z / old + 'px'; c.style.height = parseFloat(c.style.height) * z / old + 'px'; }
+  v.scrollLeft = fx * v.scrollWidth - (cx ?? v.clientWidth / 2); v.scrollTop = fy * v.scrollHeight - (cy ?? v.clientHeight / 2);
+  await render();
+}
+$('zIn').onclick = () => setZoom(ZOOMS.find(z => z > zoom) || zoom);
+$('zOut').onclick = () => setZoom([...ZOOMS].reverse().find(z => z < zoom) || zoom);
+$('zFit').onclick = () => setZoom(1);
+$('pages').addEventListener('dblclick', e => { const r = $('view').getBoundingClientRect(); setZoom(ZOOMS.find(z => z > zoom) || 1, e.clientX - r.left, e.clientY - r.top); });
+let resizeT = 0; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => doc && render(), 200); });
+
+async function open(password){
+  let r;
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/chart-open', { method: 'POST', headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password }) });
+    r = await res.json();
+  } catch (e){ return say('Could not connect', 'Please check your internet connection and try again.'); }
+  if (!r.ok){
+    if (r.reason === 'password') return askPassword(r.tried);
+    if (r.reason === 'locked') return say('Too many tries', 'Please wait 15 minutes and try again.');
+    if (r.reason === 'off') return say('This family tree is switched off', 'Please contact the family member who shared it.');
+    return say('This family tree is not available', 'Please check that you scanned the whole code.');
+  }
+  $('title').textContent = r.title || 'Family tree'; document.title = $('title').textContent;
+  box('<p>Opening the family tree…</p>');
+  try {
+    doc = await pdfjsLib.getDocument({ url: r.file, isEvalSupported: false }).promise;
+    await render();
+    $('card').hidden = true; $('zIn').disabled = $('zFit').disabled = false;
+  } catch (e){ console.error(e); say('Could not open the family tree', 'Please try again in a moment.'); }
+}
+
+function askPassword(wrong){
+  box('<h2>Family tree</h2><p>' + (wrong ? 'That password is not right. Please try again.' : 'Enter the password to open the family tree.') + '</p>' +
+    '<form id="pwf"><input id="pw" type="password" autocomplete="current-password" aria-label="Password"><button>Open</button></form>');
+  $('pw').focus();
+  $('pwf').onsubmit = e => { e.preventDefault(); const v = $('pw').value; if (v){ box('<p>Checking…</p>'); open(v); } };
+}
+
+if (!/^[0-9a-f]{48}$/.test(token)) say('This code is not complete', 'Please scan the whole QR code again.');
+else open('');
+</script>
+</html>
