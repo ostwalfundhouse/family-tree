@@ -70,6 +70,12 @@ ul.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
 .edit .fh{font-weight:600}
 .edit select{height:44px;border-radius:10px;border:1px solid var(--rule);background:var(--surface);padding:0 10px;min-width:0;width:100%}
 .more{padding-top:8px;border-top:1px dashed var(--rule)}
+.bf{display:flex;flex-direction:column;gap:6px;min-width:0}
+.edit input[type=date]{-webkit-appearance:none;appearance:none;display:block;text-align:left}
+.edit input[type=date]::-webkit-date-and-time-value{text-align:left}
+.edit label.chk{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:var(--sub);cursor:pointer;min-height:32px}
+.edit label.chk input{width:20px;height:20px;margin:0;accent-color:var(--accent)}
+.pdfnote{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--ok);border-radius:12px;padding:10px 14px;font-size:15px;margin:0}
 .pwf{display:flex;gap:8px;max-width:360px;margin:16px auto 0}
 .pwf input{flex:1;min-width:0;height:46px;border-radius:23px;border:1px solid var(--rule);background:var(--surface);padding:0 16px;font-size:16px}
 .wait{display:block;font-size:14px;color:var(--accent);font-weight:500;margin-top:2px}
@@ -99,6 +105,8 @@ ul.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
     <span class="hint" id="progressMore"></span>
   </section>
 
+  <p class="pdfnote" id="pdfNote" role="status" hidden></p>
+
   <div class="tools">
     <input id="q" type="search" placeholder="Find a name" aria-label="Find a person by name" autocomplete="off">
     <div class="seg" role="group" aria-label="Show">
@@ -121,7 +129,7 @@ try { if (window.top !== window.self && window.top.location.origin !== location.
 
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 import { makeJpegs } from './js/photo.js';
-import { showBirth, typedBirth, readBirth, readMobile, BIRTH_HELP, MOBILE_HELP } from './js/details.js';
+import { showBirth, readBirth, readMobile, MOBILE_HELP } from './js/details.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -130,6 +138,7 @@ const rpc = async (fn, body) => (await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn
 
 const token = location.hash.slice(1).trim().toLowerCase();
 let people = [], suggestions = [], need = true, target = null, auto = false;   // auto: this family's changes go on the tree at once
+let pdfAuto = false;   // the chart PDF behind the QR rebuilds itself after automatic changes
 let open_ = null; // { pid, mode: 'details' | 'more' | 'rename' | 'add_child' | 'add_spouse' | 'remove' } — the one open form
 const previews = new Map(), busy = new Set();
 // the link's password, when it has one: asked once, kept for this browser tab, sent with every call
@@ -156,7 +165,7 @@ async function open(){
   if (!r || !r.ok) return stop(r && r.reason === 'expired' ? 'This link has expired' : r && r.reason === 'off' ? 'This link is switched off' : 'This link is not valid',
     'Please ask us for a new link to add your family photos.');
   $('msg').hidden = true;
-  people = r.people; suggestions = r.suggestions || []; auto = !!r.auto;
+  people = r.people; suggestions = r.suggestions || []; auto = !!r.auto; pdfAuto = auto && !!r.pdf_auto;
   $('howNames').textContent = auto ? 'They go on the tree straight away; removals and big name changes are checked by us first.' : 'We check these before they go on the tree.';
   $('howPhotos').textContent = auto ? 'Photos go on the family tree straight away.' : 'We check every photo before it goes on the family tree.';
   const t = (r.title || '').trim();
@@ -177,9 +186,27 @@ const STATUS = { none: 'Photo needed', pending: 'Photo received, we will check i
 const missing = p => p.status === 'none' || !p.birth || !p.mobile;
 const waitingFor = p => suggestions.filter(s => s.pid === p.pid).map(s => s.kind === 'rename' ? 'name change to “' + s.name + '”' : s.kind === 'add_child' ? 'new child “' + s.name + '”' : s.kind === 'add_spouse' ? 'new husband/wife “' + s.name + '”' : 'removal from the list');
 
+// Birth date: the phone's own calendar for a full date, or a year box when only the year is known
+// (many elders have only a year, stored as 1944). Saved as 1970-05-27 or 1970, as before.
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+function birthField(b, optional){
+  const full = /^\d{4}-\d\d-\d\d$/.test(b || ''), yearOnly = !!b && !full;
+  return '<div class="bf"><label data-m="d"' + (yearOnly ? ' hidden' : '') + '>Birth date' + (optional ? ' (optional)' : '') +
+      '<input name="birth_d" type="date" min="1800-01-01" max="' + today() + '" value="' + (full ? esc(b) : '') + '"></label>' +
+    '<label data-m="y"' + (yearOnly ? '' : ' hidden') + '>Birth year' + (optional ? ' (optional)' : '') +
+      '<input name="birth_y" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="1944" value="' + (yearOnly ? esc(b) : '') + '"></label>' +
+    '<label class="chk"><input type="checkbox" name="only_year"' + (yearOnly ? ' checked' : '') + '> I only know the year</label></div>';
+}
+// '' when empty, the stored form when valid, null when not (a half-typed date counts as not valid)
+function readBirthField(form){
+  const y = form.querySelector('[name=only_year]'); if (!y) return '';
+  if (y.checked) return readBirth(form.birth_y.value);
+  return form.birth_d.validity.badInput ? null : readBirth(form.birth_d.value);
+}
+const BIRTH_PICK = 'Pick the birth date from the calendar, or tick "I only know the year" and write the year. It cannot be in the future.';
+
 function detailsForm(p){
-  return '<form class="edit" data-form="details" data-pid="' + esc(p.pid) + '">' +
-    '<label>Birth date<input name="birth" inputmode="numeric" autocomplete="off" placeholder="27/05/1970, or just 1970" value="' + esc(typedBirth(p.birth)) + '"></label>' +
+  return '<form class="edit" data-form="details" data-pid="' + esc(p.pid) + '">' + birthField(p.birth, false) +
     '<label>Mobile<input name="mobile" type="tel" inputmode="tel" autocomplete="off" placeholder="98765 43210" value="' + esc(p.mobile) + '"></label>' +
     '<p class="err" hidden></p><div class="row"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>';
 }
@@ -190,7 +217,7 @@ function suggestForm(p, mode){
   const fields = mode === 'remove' ? '<label class="wide">Why? (optional)<input name="note" maxlength="300" autocomplete="off" placeholder="For example: added twice, or not part of this family"></label>'
     : '<label class="wide">Full name<input name="name" maxlength="120" autocomplete="off" value="' + (mode === 'rename' ? esc(p.name) : '') + '"></label>' +
       (mode === 'rename' ? '' : '<label>Male or female<select name="gender"><option value="M"' + (sex === 'M' ? ' selected' : '') + '>Male</option><option value="F"' + (sex === 'F' ? ' selected' : '') + '>Female</option><option value=""' + (sex ? '' : ' selected') + '>Prefer not to say</option></select></label>' +
-        '<label>Birth date (optional)<input name="birth" inputmode="numeric" autocomplete="off" placeholder="27/05/1970 or 1970"></label>' +
+        birthField('', true) +
         '<label class="wide">Mobile (optional)<input name="mobile" type="tel" inputmode="tel" autocomplete="off"></label>');
   return '<form class="edit" data-form="' + mode + '" data-pid="' + esc(p.pid) + '"><p class="fh wide">' + esc(head) + '</p>' + fields +
     '<p class="hint wide">' + (auto && mode !== 'remove' ? 'This goes on the family tree straight away (big name changes are checked by us first).' : 'We check this before it goes on the family tree.') + '</p>' +
@@ -225,6 +252,15 @@ function render(){
   }).join('');
 }
 
+// After a change that went on at once: when a chart PDF rebuilds itself, say when it will show there, and keep a
+// line on the page (toasts vanish). The rebuild runs about 10 minutes after the last change, checked every 5.
+function pdfSoon(){
+  if (!pdfAuto) return '';
+  $('pdfNote').textContent = 'Your changes will show in the family tree PDF in about 15 minutes. If you keep making changes, it updates about 15 minutes after the last one.';
+  $('pdfNote').hidden = false;
+  return ' It will show in the family tree PDF in about 15 minutes.';
+}
+
 async function send(p, file){
   busy.add(p.pid); render();
   try {
@@ -236,7 +272,7 @@ async function send(p, file){
     const r = await res.json().catch(() => ({}));
     if (!res.ok || !r.ok) throw new Error(r.error || 'The photo could not be sent. Please try again.');
     previews.set(p.pid, j.preview);
-    if (r.applied){ p.status = 'approved'; toast('Thank you! The photo of ' + p.name.split(' ')[0] + ' is on the family tree now.'); }
+    if (r.applied){ p.status = 'approved'; toast('Thank you! The photo of ' + p.name.split(' ')[0] + ' is on the family tree now.' + pdfSoon(), pdfAuto ? 7000 : 3500); }
     else { if (p.status !== 'approved') p.status = 'pending'; toast('Thank you! Photo of ' + p.name.split(' ')[0] + ' received. We will check it' + (r.review === 'small' ? ', because it is quite small' : '') + '.', 6000); }
   } catch (e){ toast(e.message || String(e), 7000); }
   busy.delete(p.pid); render();
@@ -245,8 +281,8 @@ async function send(p, file){
 async function submit(form){
   const p = people.find(x => x.pid === form.dataset.pid), mode = form.dataset.form, err = form.querySelector('.err');
   const say = t => { err.textContent = t; err.hidden = false; }, btn = form.querySelector('[type=submit]');
-  const birth = form.birth ? readBirth(form.birth.value) : '', mobile = form.mobile ? readMobile(form.mobile.value) : '';
-  if (birth === null) return say(BIRTH_HELP);
+  const birth = readBirthField(form), mobile = form.mobile ? readMobile(form.mobile.value) : '';
+  if (birth === null) return say(BIRTH_PICK);
   if (mobile === null) return say(MOBILE_HELP);
   if (form.name && !form.name.value.trim()) return say('Please write the full name.');
   btn.disabled = true;
@@ -255,13 +291,13 @@ async function submit(form){
       const r = await rpc('share_update_person', { p_token: token, p_pid: p.pid, p_birth: birth, p_mobile: mobile, p_password: password || null });
       if (!r || !r.ok) throw new Error((r && r.error) || 'Could not save. Please try again.');
       p.birth = r.birth; p.mobile = r.mobile; open_ = null; render();
-      toast('Saved for ' + p.name.split(' ')[0] + '. It is on the family tree now.');
+      toast('Saved for ' + p.name.split(' ')[0] + '. It is on the family tree now.' + pdfSoon(), pdfAuto ? 7000 : 3500);
     } else {
       const name = form.name ? form.name.value.trim() : '';
       const r = await rpc('share_suggest', { p_token: token, p_kind: mode, p_pid: p.pid, p_name: name, p_gender: form.gender ? form.gender.value : '', p_birth: birth, p_mobile: mobile, p_note: form.note ? form.note.value.trim() : '', p_password: password || null });
       if (!r || !r.ok) throw new Error((r && r.error) || 'Could not send. Please try again.');
       open_ = null;
-      if (r.applied){ toast('Done! It is on the family tree now.'); await open(); }   // reload the list to show the new name or person
+      if (r.applied){ await open(); toast('Done! It is on the family tree now.' + pdfSoon(), pdfAuto ? 7000 : 3500); }   // reload the list to show the new name or person
       else { suggestions.push({ kind: mode, pid: p.pid, name }); render(); toast('Thank you! We will check it before it goes on the family tree.', 6000); }
     }
   } catch (e){ say(e.message); btn.disabled = false; }
@@ -276,6 +312,12 @@ $('list').onclick = e => {
   render(); const i = document.querySelector('form.edit input'); if (i) i.focus();
 };
 $('list').onsubmit = e => { e.preventDefault(); submit(e.target); };
+$('list').onchange = e => {
+  if (e.target.name !== 'only_year') return;
+  const f = e.target.form, y = e.target.checked;
+  if (y && f.birth_d.value && !f.birth_y.value) f.birth_y.value = f.birth_d.value.slice(0, 4);   // keep the year already picked
+  f.querySelector('[data-m=d]').hidden = y; f.querySelector('[data-m=y]').hidden = !y;
+};
 $('file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f && target) send(target, f); };
 $('q').oninput = render;
 $('fNeed').onclick = () => { need = true; $('fNeed').setAttribute('aria-pressed', 'true'); $('fAll').setAttribute('aria-pressed', 'false'); render(); };
